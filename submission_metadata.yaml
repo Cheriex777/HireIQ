@@ -14,17 +14,20 @@ primary_contact:
 team_members:
   - name: "Ishika Vilasrao Mohod"
     email: "mohodishika2022@gmail.com"
-    role: "ML Engineer / Data Science"
-  - name: "Ashwini Koturwar"
-    email: ""        # Fill in when available
-    role: "Team Member"
+    role: "Data Science"
+  - name: "Ashwini Umakant Koturwar"
+    email: "koturwarashwini1@gmail.com"
+    role: "MERN Stack Developer"
+  - name: "Dakshyani Borade"
+    email: "dakshyaniborade@gmail.com"
+    role: "AI/ML"
 
 # ============================================================================
 # Code and reproducibility
 # ============================================================================
 github_repo: "https://github.com/Cheriex777/HireIQ.git"
 
-sandbox_link: ""    # Fill in before submitting — HuggingFace Spaces / Streamlit / Colab etc.
+sandbox_link: "https://colab.research.google.com/drive/1veFIu33Nxd3j3Mw4zUuQqkKsrpaxkYL1?usp=sharing"
 
 reproduce_command: "python run.py"
 
@@ -40,7 +43,7 @@ compute:
   uses_gpu_for_inference: false
   has_network_during_ranking: false
   pre_computation_required: true
-  pre_computation_time_minutes: 12   # One-time embedding generation for 100K candidates
+  pre_computation_time_minutes: 12
 
 # ============================================================================
 # AI tools declaration
