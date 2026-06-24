@@ -1,0 +1,51 @@
+candidate_id,rank,score,reasoning
+CAND_0000031,1,55.16,"6 years of strong relevant experience, good semantic relevance to job description, moderate recruiter engagement, currently a Recommendation Systems Engineer."
+CAND_0000021,2,51.03,"14 years of strong relevant experience, good semantic relevance to job description."
+CAND_0000037,3,47.15,"14 years of strong relevant experience, good semantic relevance to job description, moderate recruiter engagement."
+CAND_0000002,4,45.95,"12 years of strong relevant experience, good semantic relevance to job description."
+CAND_0000009,5,45.71,"11 years of strong relevant experience, good semantic relevance to job description."
+CAND_0000043,6,45.55,"8 years of strong relevant experience, good semantic relevance to job description."
+CAND_0000032,7,45.15,"8 years of strong relevant experience, moderate recruiter engagement."
+CAND_0000014,8,45.1,"8 years of strong relevant experience, good semantic relevance to job description."
+CAND_0000049,9,44.64,"11 years of strong relevant experience, good semantic relevance to job description."
+CAND_0000045,10,44.48,"12 years of strong relevant experience, good semantic relevance to job description."
+CAND_0000050,11,44.01,"13 years of strong relevant experience, moderate recruiter engagement."
+CAND_0000041,12,43.55,13 years of strong relevant experience.
+CAND_0000030,13,43.52,10 years of strong relevant experience.
+CAND_0000046,14,43.5,"7 years of strong relevant experience, good semantic relevance to job description."
+CAND_0000036,15,43.15,"11 years of strong relevant experience, moderate recruiter engagement."
+CAND_0000020,16,43.14,"6 years of strong relevant experience, good semantic relevance to job description."
+CAND_0000007,17,43.11,"5 years of strong relevant experience, good semantic relevance to job description."
+CAND_0000001,18,42.79,"6 years of strong relevant experience, moderate recruiter engagement."
+CAND_0000029,19,42.23,"7 years of strong relevant experience, good semantic relevance to job description."
+CAND_0000006,20,42.1,"6 years of strong relevant experience, good semantic relevance to job description."
+CAND_0000044,21,41.85,"5 years of strong relevant experience, moderate recruiter engagement."
+CAND_0000015,22,41.68,5 years of strong relevant experience.
+CAND_0000026,23,41.46,"6 years of strong relevant experience, good semantic relevance to job description."
+CAND_0000017,24,41.45,12 years of strong relevant experience.
+CAND_0000033,25,41.12,8 years of strong relevant experience.
+CAND_0000034,26,40.7,14 years of strong relevant experience.
+CAND_0000023,27,40.4,"3 years of relevant experience, good semantic relevance to job description, moderate recruiter engagement."
+CAND_0000038,28,40.29,"6 years of strong relevant experience, moderate recruiter engagement."
+CAND_0000024,29,40.28,"7 years of strong relevant experience, good semantic relevance to job description, moderate recruiter engagement."
+CAND_0000048,30,40.26,"9 years of strong relevant experience, moderate recruiter engagement."
+CAND_0000025,31,39.78,"7 years of strong relevant experience, moderate recruiter engagement."
+CAND_0000019,32,39.5,6 years of strong relevant experience.
+CAND_0000008,33,39.41,"3 years of relevant experience, good semantic relevance to job description."
+CAND_0000018,34,39.19,"6 years of strong relevant experience, good semantic relevance to job description."
+CAND_0000005,35,38.71,11 years of strong relevant experience.
+CAND_0000016,36,38.65,"5 years of strong relevant experience, moderate recruiter engagement."
+CAND_0000010,37,37.69,4 years of relevant experience.
+CAND_0000027,38,37.24,"3 years of relevant experience, moderate recruiter engagement."
+CAND_0000039,39,36.8,"3 years of relevant experience, good semantic relevance to job description, moderate recruiter engagement."
+CAND_0000042,40,36.59,"5 years of strong relevant experience, good semantic relevance to job description."
+CAND_0000011,41,36.19,"2 years of relevant experience, moderate recruiter engagement."
+CAND_0000004,42,35.9,"3 years of relevant experience, good semantic relevance to job description."
+CAND_0000047,43,34.24,2 years of relevant experience.
+CAND_0000013,44,34.01,Good semantic relevance to job description.
+CAND_0000035,45,33.25,4 years of relevant experience.
+CAND_0000022,46,32.98,Good semantic relevance to job description.
+CAND_0000028,47,32.08,Good semantic relevance to job description.
+CAND_0000040,48,30.92,Moderate recruiter engagement.
+CAND_0000003,49,30.24,Moderate overall fit based on combined profile signals.
+CAND_0000012,50,30.04,Moderate overall fit based on combined profile signals.

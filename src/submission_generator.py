@@ -1,0 +1,131 @@
+"""
+submission_generator.py
+HireIQ - Submission Generator
+
+Builds the final submission.csv from ranked candidates and their
+generated reasoning strings.
+"""
+
+from __future__ import annotations
+
+import csv
+import logging
+import os
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger("hireiq.submission_generator")
+logging.basicConfig(level=logging.INFO)
+
+
+SUBMISSION_COLUMNS = ["candidate_id", "rank", "score", "reasoning"]
+
+DEFAULT_OUTPUT_PATH = os.path.join("outputs", "submission.csv")
+
+
+def _validate_row(row: Dict[str, Any]) -> bool:
+    required = ("candidate_id", "rank", "final_score")
+    missing = [k for k in required if k not in row]
+    if missing:
+        logger.warning(
+            "Candidate %s missing keys %s; skipping in submission.",
+            row.get("candidate_id", "UNKNOWN"),
+            missing,
+        )
+        return False
+    return True
+
+
+def build_submission_rows(
+    ranked_candidates: List[Dict[str, Any]],
+    reasoning_map: Dict[str, str],
+) -> List[Dict[str, Any]]:
+    """
+    Merge ranked candidate scores with reasoning text into final submission rows.
+
+    Args:
+        ranked_candidates: list of dicts from final_ranker.rank() output
+                            (must contain candidate_id, rank, final_score).
+        reasoning_map: dict mapping candidate_id -> reasoning string.
+
+    Returns:
+        list of dicts with keys: candidate_id, rank, score, reasoning.
+    """
+    rows: List[Dict[str, Any]] = []
+
+    for cand in ranked_candidates:
+        if not _validate_row(cand):
+            continue
+
+        cid = cand.get("candidate_id", "UNKNOWN")
+        try:
+            rows.append({
+                "candidate_id": cid,
+                "rank": int(cand.get("rank", 0)),
+                "score": round(float(cand.get("final_score", 0.0)), 2),
+                "reasoning": reasoning_map.get(cid, "Ranked based on combined profile signals."),
+            })
+        except Exception as exc:
+            logger.error("Failed to build submission row for %s: %s", cid, exc)
+            continue
+
+    rows.sort(key=lambda r: r["rank"])
+    logger.info("Built %d submission rows.", len(rows))
+    return rows
+
+
+def write_submission_csv(
+    rows: List[Dict[str, Any]],
+    output_path: str = DEFAULT_OUTPUT_PATH,
+) -> str:
+    """
+    Write submission rows to a CSV file.
+
+    Args:
+        rows: list of dicts with keys candidate_id, rank, score, reasoning.
+        output_path: destination path for submission.csv.
+
+    Returns:
+        The output_path written to.
+
+    Raises:
+        IOError: if the file cannot be written.
+    """
+    try:
+        out_dir = os.path.dirname(output_path)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+
+        with open(output_path, mode="w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=SUBMISSION_COLUMNS)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({col: row.get(col, "") for col in SUBMISSION_COLUMNS})
+
+        logger.info("Submission written to %s (%d rows).", output_path, len(rows))
+        return output_path
+
+    except Exception as exc:
+        logger.error("Failed to write submission CSV to %s: %s", output_path, exc)
+        raise IOError(f"Could not write submission CSV: {exc}") from exc
+
+
+def generate_submission(
+    ranked_candidates: List[Dict[str, Any]],
+    reasoning_map: Dict[str, str],
+    output_path: str = DEFAULT_OUTPUT_PATH,
+) -> str:
+    """
+    End-to-end: build rows from ranked candidates + reasoning, write to CSV.
+
+    Args:
+        ranked_candidates: output from final_ranker.rank().
+        reasoning_map: output from reasoning_generator.generate_reasoning_batch().
+        output_path: path to write submission.csv.
+
+    Returns:
+        Path to the written CSV file.
+    """
+    rows = build_submission_rows(ranked_candidates, reasoning_map)
+    if not rows:
+        logger.warning("No valid rows to write; submission.csv will be empty (header only).")
+    return write_submission_csv(rows, output_path=output_path)

@@ -1,0 +1,87 @@
+# Redrob Hackathon — Submission Metadata
+# Team: HireIQ
+
+# ============================================================================
+# Team identity
+# ============================================================================
+team_name: "HireIQ"
+
+primary_contact:
+  name: "Ishika Vilasrao Mohod"
+  email: "mohodishika2022@gmail.com"
+  phone: "+91-9028638572"
+
+team_members:
+  - name: "Ishika Vilasrao Mohod"
+    email: "mohodishika2022@gmail.com"
+    role: "ML Engineer / Data Science"
+  - name: "Ashwini Koturwar"
+    email: ""        # Fill in when available
+    role: "Team Member"
+
+# ============================================================================
+# Code and reproducibility
+# ============================================================================
+github_repo: "https://github.com/Cheriex777/HireIQ.git"
+
+sandbox_link: ""    # Fill in before submitting — HuggingFace Spaces / Streamlit / Colab etc.
+
+reproduce_command: "python run.py"
+
+# ============================================================================
+# Compute environment
+# ============================================================================
+compute:
+  platform: "Windows PC"
+  cpu_cores: 4
+  ram_gb: 16
+  python_version: "3.12.4"
+  os: "Windows 11"
+  uses_gpu_for_inference: false
+  has_network_during_ranking: false
+  pre_computation_required: true
+  pre_computation_time_minutes: 12   # One-time embedding generation for 100K candidates
+
+# ============================================================================
+# AI tools declaration
+# ============================================================================
+ai_tools_used:
+  - "Claude"
+
+ai_usage_summary: |
+  Used Claude (Anthropic) for code review, debugging, and architectural
+  discussion during development of the data science pipeline. Claude assisted
+  with module signature verification, field name corrections against the
+  candidate schema, and pipeline orchestration in run.py. No candidate data
+  was fed to any LLM. All ranking logic, scoring weights, and feature
+  engineering decisions were made by the team.
+
+# ============================================================================
+# Approach summary
+# ============================================================================
+methodology_summary: |
+  HireIQ is a five-signal hybrid ranking system built for the Redrob Senior
+  AI Engineer JD. Pipeline: (1) Semantic retrieval using sentence-transformers
+  (all-MiniLM-L6-v2) with cosine similarity to retrieve top-500 candidates
+  from 100K pool. (2) Feature extraction across five dimensions — semantic
+  score (40%), skill overlap with JD keywords including synonym normalization
+  and partial credit (25%), experience score tuned to JD sweet spot of 5-9
+  years (15%), behavioral engagement signals from redrob_signals including
+  recruiter response rate, GitHub activity, interview completion, and
+  open-to-work flag (10%), title relevance with fuzzy keyword matching against
+  20+ engineering title variants (10%). (3) Hybrid weighted ranking to produce
+  top-100 with final scores. (4) Rule-based reasoning generator producing
+  one-line human-readable explanations per candidate. Designed to penalize
+  keyword stuffers (title score), ghost candidates (behavior score), and
+  consulting-background candidates via semantic context understanding.
+  Runtime: ~12 min first run (embedding cache), ~2 min subsequent runs.
+
+# ============================================================================
+# Declarations
+# ============================================================================
+declarations:
+  read_submission_spec: true
+  code_is_original_work: true
+  no_collusion: true
+  honeypot_check_done: false
+  reproduction_tested: true

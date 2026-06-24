@@ -1,0 +1,58 @@
+Job Description: Senior AI Engineer — Founding Team
+
+Company: Redrob AI (Series A AI-native talent intelligence platform)
+
+Location: Pune/Noida, India (Hybrid — flexible cadence) | Open to relocation candidates from Tier-1 Indian cities
+
+Employment Type: Full-time
+
+Experience Required: 5–9 years
+
+Let's be honest about this role
+
+We're a Series A company building a new AI Engineering org from scratch. We need someone simultaneously comfortable with deep technical depth in modern ML systems — embeddings, retrieval, ranking, LLMs, fine-tuning — AND a scrappy product-engineering attitude willing to ship a working ranker in a week.
+
+What you'd actually be doing
+
+Own the intelligence layer of Redrob's product: the ranking, retrieval, and matching systems that decide what recruiters see when they search for candidates.
+
+Weeks 1-3: Audit current BM25 + rule-based scoring. Identify 3-4 highest-leverage things to fix.
+Weeks 4-8: Ship v2 ranking system with embeddings, hybrid retrieval, and LLM-based re-ranking.
+Weeks 9-12: Set up evaluation infrastructure — offline benchmarks, online A/B testing, recruiter-feedback loops.
+Beyond: Drive long-term architecture for candidate-JD matching at scale, mentor next hires, work with recruiter-experience PM.
+
+Things you absolutely need
+
+Production experience with embeddings-based retrieval systems (sentence-transformers, OpenAI embeddings, BGE, E5, or similar) deployed to real users. Must have handled embedding drift, index refresh, retrieval-quality regression in production.
+
+Production experience with vector databases or hybrid search infrastructure — Pinecone, Weaviate, Qdrant, Milvus, OpenSearch, Elasticsearch, FAISS, or similar. Operational experience matters, not the specific tech.
+
+Strong Python. Code quality matters.
+
+Hands-on experience designing evaluation frameworks for ranking systems — NDCG, MRR, MAP, offline-to-online correlation, A/B test interpretation.
+
+Things we'd like but won't reject for
+
+LLM fine-tuning experience (LoRA, QLoRA, PEFT)
+Experience with learning-to-rank models (XGBoost-based or neural)
+Prior exposure to HR-tech, recruiting tech, or marketplace products
+Background in distributed systems or large-scale inference optimization
+Open-source contributions in the AI/ML space
+
+Disqualifiers
+
+Pure research background without production deployment.
+AI experience consists primarily of recent LangChain/OpenAI wrapper projects without pre-LLM ML production experience.
+Senior engineer who hasn't written production code in last 18 months.
+Entire career at consulting firms (TCS, Infosys, Wipro, Accenture, Cognizant, Capgemini).
+Primary expertise in computer vision, speech, or robotics without significant NLP/IR exposure.
+
+Ideal candidate profile
+
+6-8 years total experience, 4-5 in applied ML/AI roles at product companies (not pure services).
+Has shipped at least one end-to-end ranking, search, or recommendation system to real users at meaningful scale.
+Has strong opinions about retrieval (hybrid vs dense), evaluation (offline vs online), and LLM integration (when to fine-tune vs prompt).
+Located in or willing to relocate to Noida or Pune.
+Active on Redrob platform / clearly in job market.
+
+Key skills: Python, embeddings, vector search, hybrid retrieval, ranking systems, LLMs, evaluation frameworks, NDCG, MRR, sentence-transformers, FAISS, Pinecone, Elasticsearch, learning-to-rank, A/B testing, NLP, information retrieval.
