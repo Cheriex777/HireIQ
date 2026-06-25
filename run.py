@@ -5,8 +5,12 @@ run.py — HireIQ pipeline orchestrator
 import logging
 import time
 from pathlib import Path
-
-from fastapi import logger
+from src.semantic_retriever import SemanticRetriever
+from src.feature_extractor import extract_features_batch
+from src.final_ranker import rank_candidates as rank_candidates_fn
+from src.reasoning_generator import generate_reasoning_batch
+from src.submission_generator import generate_submission
+from src.honeypot_detector import detect_honeypots_batch
 
 # ── logging ──────────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -24,12 +28,6 @@ from src.config import (
     TOP_K,
     FINAL_TOP_K,
 )
-from src.semantic_retriever import SemanticRetriever
-from src.feature_extractor import extract_features_batch
-from src.final_ranker import rank_candidates as rank_candidates_fn
-from src.reasoning_generator import generate_reasoning_batch
-from src.submission_generator import generate_submission
-
 
 # ── helpers ──────────────────────────────────────────────────────────────────────
 
@@ -93,6 +91,24 @@ def merge_features(candidates: list[dict], features: list[dict]) -> list[dict]:
             for cand in candidates]
 
 
+def merge_honeypot(candidates: list[dict], honeypot_results: list[dict]) -> list[dict]:
+    """
+    Merge honeypot_score/honeypot_penalty/is_suspicious onto candidate dicts
+    so final_ranker.py can apply the penalty during scoring.
+    """
+    honeypot_map: dict[str, dict] = {h["candidate_id"]: h for h in honeypot_results}
+    merged = []
+    for cand in candidates:
+        cid = cand.get("candidate_id", "")
+        hp = honeypot_map.get(cid, {
+            "honeypot_score": 0.0,
+            "honeypot_penalty": 0.0,
+            "is_suspicious": False,
+        })
+        merged.append({**cand, **hp})
+    return merged
+
+
 # ── pipeline ─────────────────────────────────────────────────────────────────────
 
 def run_pipeline() -> None:
@@ -135,7 +151,20 @@ def run_pipeline() -> None:
     log.info("Features extracted for %d candidates", len(features))
 
     # 5. Merge features onto candidate dicts ─────────────────────────────────────
+    # 5. Merge features onto candidate dicts ─────────────────────────────────────
     featured: list[dict] = merge_features(candidates, features)
+
+    # 5b. Honeypot detection ──────────────────────────────────────────────────────
+    log.info("Step 3.5/6 — Honeypot detection")
+    honeypot_results: list[dict] = detect_honeypots_batch(candidates)
+    suspicious_count = sum(1 for h in honeypot_results if h.get("is_suspicious"))
+    log.info(
+        "Honeypot detection complete: %d/%d candidates flagged suspicious",
+        suspicious_count, len(honeypot_results),
+    )
+    featured = merge_honeypot(featured, honeypot_results)
+
+    # 6. Hybrid ranking ───────────────────────────────────────────────────────────
 
     # 6. Hybrid ranking ───────────────────────────────────────────────────────────
     # rank_candidates(feature_rows, top_n) → list[dict] with final_score + rank

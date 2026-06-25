@@ -40,37 +40,83 @@ def extract_skills_from_candidate(candidate: Dict) -> List[str]:
     skills = candidate.get("skills", [])
     return [s["name"].lower().strip() for s in skills if s.get("name")]
 
-
-def build_candidate_document(candidate: Dict) -> str:
+def build_candidate_document(candidate: dict) -> str:
     """
-    Combine headline + summary + skills + titles into a single searchable text.
-    Used for generating embeddings.
+    Build a rich text document for embedding from a candidate record.
+    Combines headline, summary, current title, skills, career history,
+    and education into a single semantically-dense string.
+
+    Args:
+        candidate: raw candidate record with profile, skills, career_history,
+                   education fields.
+
+    Returns:
+        str: concatenated text document for SentenceTransformer encoding.
     """
-    profile = candidate.get("profile", {})
-    headline = profile.get("headline", "")
-    summary = profile.get("summary", "")
-    current_title = profile.get("current_title", "")
+    try:
+        profile = candidate.get("profile", {}) or {}
+        parts = []
 
-    skills = extract_skills_from_candidate(candidate)
-    skills_text = " ".join(skills)
+        # Core profile fields
+        headline = profile.get("headline", "")
+        summary = profile.get("summary", "")
+        current_title = profile.get("current_title", "")
+        current_company = profile.get("current_company", "")
 
-    # Include career history descriptions for richer context
-    career_snippets = []
-    for job in candidate.get("career_history", []):
-        title = job.get("title", "")
-        desc = job.get("description", "")
-        if title:
-            career_snippets.append(title)
-        if desc:
-            career_snippets.append(desc[:200])  # first 200 chars
+        if headline:
+            parts.append(headline)
+        if current_title:
+            parts.append(f"Current role: {current_title}" +
+                         (f" at {current_company}" if current_company else ""))
+        if summary:
+            parts.append(summary)
 
-    career_text = " ".join(career_snippets)
+        # Skills
+        raw_skills = candidate.get("skills", []) or []
+        skill_names = [
+            s.get("name") for s in raw_skills
+            if isinstance(s, dict) and s.get("name")
+        ] or [s for s in raw_skills if isinstance(s, str)]
+        if skill_names:
+            parts.append("Skills: " + ", ".join(skill_names))
 
-    document = f"{current_title} {headline} {summary} {skills_text} {career_text}"
-    # Clean extra whitespace
-    document = re.sub(r"\s+", " ", document).strip()
-    return document
+        # Career history — titles + companies + descriptions
+        career_history = candidate.get("career_history", []) or []
+        for role in career_history:
+            if not isinstance(role, dict):
+                continue
+            role_title = role.get("title", "")
+            role_company = role.get("company", "")
+            role_desc = role.get("description", "")
+            role_line_parts = [p for p in [role_title, role_company] if p]
+            if role_line_parts:
+                line = " at ".join(role_line_parts)
+                if role_desc:
+                    line += f": {role_desc}"
+                parts.append(line)
 
+        # Education — degree + field + institution
+        education = candidate.get("education", []) or []
+        for edu in education:
+            if not isinstance(edu, dict):
+                continue
+            degree = edu.get("degree", "")
+            field = edu.get("field", "") or edu.get("major", "")
+            institution = edu.get("institution", "") or edu.get("school", "")
+            edu_line_parts = [p for p in [degree, field, institution] if p]
+            if edu_line_parts:
+                parts.append(", ".join(edu_line_parts))
+
+        document = ". ".join(p.strip() for p in parts if p and p.strip())
+        return document if document else "No profile information available."
+
+    except Exception as exc:
+        import logging
+        logging.getLogger("hireiq.utils").error(
+            "build_candidate_document failed for %s: %s",
+            candidate.get("candidate_id", "UNKNOWN"), exc
+        )
+        return candidate.get("profile", {}).get("headline", "") or "No profile information available."
 
 def get_years_of_experience(candidate: Dict) -> float:
     """Safely extract years_of_experience from candidate."""

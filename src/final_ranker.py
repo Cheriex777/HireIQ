@@ -2,8 +2,9 @@
 final_ranker.py
 HireIQ - Hybrid Ranking Engine
 
-Combines semantic, skill, experience, behavior, and title scores into a
-single final score and returns the top-N ranked candidates.
+Combines semantic, skill, experience, behavior, title, and profile-
+completeness scores into a base score, then applies a multiplicative
+honeypot penalty to demote suspicious candidates before ranking.
 """
 
 from __future__ import annotations
@@ -16,11 +17,12 @@ logging.basicConfig(level=logging.INFO)
 
 
 DEFAULT_WEIGHTS: Dict[str, float] = {
-    "semantic_score": 0.40,
-    "skill_score": 0.25,
+    "semantic_score": 0.35,
+    "skill_score": 0.27,
     "experience_score": 0.15,
     "behavior_score": 0.10,
-    "title_score": 0.10,
+    "title_score": 0.08,
+    "profile_score": 0.05,
 }
 
 REQUIRED_FEATURE_KEYS = (
@@ -32,9 +34,11 @@ REQUIRED_FEATURE_KEYS = (
     "title_score",
 )
 
+MAX_PENALTY_CAP = 0.9  # never reduce a score by more than 90%
+
 
 class HybridRanker:
-    """Combines multi-signal features into a final hybrid score and ranks candidates."""
+    """Combines multi-signal features + honeypot penalty into a final score."""
 
     def __init__(self, weights: Optional[Dict[str, float]] = None) -> None:
         self.weights = weights or DEFAULT_WEIGHTS
@@ -62,8 +66,8 @@ class HybridRanker:
             return False
         return True
 
-    def calculate_final_score(self, features: Dict[str, Any]) -> float:
-        """Compute weighted final scorne for a single candidate's feature row."""
+    def calculate_base_score(self, features: Dict[str, Any]) -> float:
+        """Weighted combination of all 6 signals, before honeypot penalty."""
         try:
             score = (
                 self.weights["semantic_score"] * float(features.get("semantic_score", 0.0))
@@ -71,8 +75,26 @@ class HybridRanker:
                 + self.weights["experience_score"] * float(features.get("experience_score", 0.0))
                 + self.weights["behavior_score"] * float(features.get("behavior_score", 0.0))
                 + self.weights["title_score"] * float(features.get("title_score", 0.0))
+                + self.weights["profile_score"] * float(features.get("profile_score", 0.0))
             )
             return round(min(max(score, 0.0), 100.0), 2)
+        except Exception as exc:
+            logger.error(
+                "calculate_base_score failed for candidate %s: %s",
+                features.get("candidate_id", "UNKNOWN"),
+                exc,
+            )
+            return 0.0
+
+    def calculate_final_score(self, features: Dict[str, Any]) -> float:
+        """Apply honeypot penalty multiplicatively to the base score."""
+        try:
+            base_score = self.calculate_base_score(features)
+            penalty = float(features.get("honeypot_penalty", 0.0))
+            penalty = min(max(penalty, 0.0), MAX_PENALTY_CAP)
+
+            final = base_score * (1.0 - penalty)
+            return round(min(max(final, 0.0), 100.0), 2)
         except Exception as exc:
             logger.error(
                 "calculate_final_score failed for candidate %s: %s",
@@ -90,11 +112,13 @@ class HybridRanker:
         Score and rank all candidates, returning the top_n with rank assigned.
 
         Args:
-            feature_rows: list of dicts from feature_extractor.extract_all_features.
+            feature_rows: list of dicts containing feature scores AND
+                          honeypot_score/honeypot_penalty/is_suspicious
+                          (merged in beforehand by run.py).
             top_n: number of top candidates to return.
 
         Returns:
-            list of dicts: {candidate_id, final_score, rank, **original features}
+            list of dicts: {..., base_score, final_score, rank}
         """
         scored: List[Dict[str, Any]] = []
 
@@ -102,8 +126,11 @@ class HybridRanker:
             if not self._validate_feature_row(row):
                 continue
             try:
+                base_score = self.calculate_base_score(row)
                 final_score = self.calculate_final_score(row)
+
                 enriched = dict(row)
+                enriched["base_score"] = base_score
                 enriched["final_score"] = final_score
                 scored.append(enriched)
             except Exception as exc:
@@ -120,10 +147,12 @@ class HybridRanker:
         for idx, cand in enumerate(top_candidates, start=1):
             cand["rank"] = idx
 
+        suspicious_in_top = sum(1 for c in top_candidates if c.get("is_suspicious"))
         logger.info(
-            "Ranked %d candidates, returning top %d.",
+            "Ranked %d candidates, returning top %d (%d flagged suspicious in top results).",
             len(scored),
             len(top_candidates),
+            suspicious_in_top,
         )
         return top_candidates
 
