@@ -109,6 +109,30 @@ SKILL_SYNONYMS: Dict[str, str] = {
     "ab testing":                   "a/b testing",
     "hybrid search":                "hybrid retrieval",
     "dense retrieval":              "hybrid retrieval",
+    "sentence transformers":    "sentence-transformers",
+    "hugging face transformers": "sentence-transformers",
+    "huggingface transformers": "sentence-transformers",
+    "faiss":                    "faiss",
+    "embeddings":               "embeddings",
+    "machine learning":         "machine learning",
+    "feature engineering":      "feature engineering",
+    "information retrieval":    "information retrieval",
+    "mlops":                    "mlops",
+    "mlflow":                   "mlflow",
+    "scikit-learn":             "scikit-learn",
+    "scikit learn":             "scikit-learn",
+    "sentence transformers":     "sentence-transformers",
+    "hugging face transformers": "sentence-transformers",
+    "huggingface transformers": "sentence-transformers",
+    "llms":                      "llms",
+    "large language models":     "llms",
+    "a/b testing":               "a/b testing",
+    "ab testing":                "a/b testing",
+    "learning to rank":          "learning-to-rank",
+    "vector search":             "vector search",
+    "hybrid retrieval":          "hybrid retrieval",
+    "ranking systems":           "ranking systems",
+    "evaluation frameworks":     "evaluation frameworks",
 }
 
 BEHAVIOR_FIELDS: List[str] = [
@@ -146,21 +170,33 @@ BEHAVIOR_COUNT_CAPS: Dict[str, float] = {
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
-
 def _normalize_skill(skill: str) -> str:
     s = skill.strip().lower()
-    return SKILL_SYNONYMS.get(s, s)
+    s_no_hyphen = s.replace("-", " ")
+    s_with_hyphen = s.replace(" ", "-")
+    return SKILL_SYNONYMS.get(s,
+           SKILL_SYNONYMS.get(s_no_hyphen,
+           SKILL_SYNONYMS.get(s_with_hyphen, s)))
 
 
-def _normalize_skill_set(skills: Optional[List[str]]) -> set:
+def _normalize_skill_set(skills: Optional[List[Any]]) -> set:
     if not skills:
         return set()
     try:
-        return {_normalize_skill(s) for s in skills if isinstance(s, str) and s.strip()}
+        names = []
+        for s in skills:
+            if isinstance(s, dict):
+                name = s.get("name", "")
+            elif isinstance(s, str):
+                name = s
+            else:
+                continue
+            if name and name.strip():
+                names.append(_normalize_skill(name))
+        return set(names)
     except Exception as exc:
-        logger.warning("Failed to normalize skill list: %s", exc)
+        logger.warning("Failed to normalize skill list %s: %s", skills, exc)
         return set()
-
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:

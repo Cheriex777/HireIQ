@@ -63,7 +63,7 @@ class HybridRanker:
         return True
 
     def calculate_final_score(self, features: Dict[str, Any]) -> float:
-        """Compute weighted final score for a single candidate's feature row."""
+        """Compute weighted final scorne for a single candidate's feature row."""
         try:
             score = (
                 self.weights["semantic_score"] * float(features.get("semantic_score", 0.0))

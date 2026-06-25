@@ -6,6 +6,8 @@ import logging
 import time
 from pathlib import Path
 
+from fastapi import logger
+
 # ── logging ──────────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -44,7 +46,7 @@ def parse_jd_skills(job_description: str) -> list[str]:
     """
     for line in job_description.splitlines():
         if line.lower().startswith("key skills:"):
-            skills = [s.strip() for s in line.split(":", 1)[1].split(",") if s.strip()]
+            skills = [s.strip().rstrip(".") for s in line.split(":", 1)[1].split(",") if s.strip()]
             log.info("Parsed %d JD skills from 'Key skills:' line", len(skills))
             return skills
 
@@ -99,7 +101,14 @@ def run_pipeline() -> None:
 
     # 1. Load JD ─────────────────────────────────────────────────────────────────
     job_description = load_job_description(JOB_DESCRIPTION_PATH)
-    jd_skills: list[str] = parse_jd_skills(job_description)
+    jd_skills = parse_jd_skills(job_description)
+
+    EXCLUDE_FROM_SKILLS = {
+        "ndcg", "mrr", "a/b testing", "evaluation frameworks",
+        "ranking systems", "hybrid retrieval"
+    }
+    jd_skills = [s for s in jd_skills if s.strip().lower() not in EXCLUDE_FROM_SKILLS]
+    log.info("Filtered JD skills to %d tool-level terms: %s", len(jd_skills), jd_skills)
 
     # 2. Semantic retrieval ───────────────────────────────────────────────────────
     log.info("Step 2/6 — Semantic retrieval (top_k=%d)", TOP_K)

@@ -6,7 +6,7 @@ from pathlib import Path
 
 # ── Paths ────────────────────────────────────────────────────────────────────────
 BASE_DIR             = Path(__file__).resolve().parent.parent  # project root
-CANDIDATES_PATH = str(BASE_DIR / "data" / "sample_candidates.json")
+CANDIDATES_PATH = str(BASE_DIR / "data" / "candidates.jsonl")
 JOB_DESCRIPTION_PATH = str(BASE_DIR / "data" / "job_description.txt")
 OUTPUT_DIR           = str(BASE_DIR / "output")
 

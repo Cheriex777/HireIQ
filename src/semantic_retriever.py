@@ -82,7 +82,9 @@ class SemanticRetriever:
         saved_docs = {}
 
         for cand in self.candidates_raw:
-            cid = cand["candidate_id"]
+            cid = cand.get("candidate_id")
+            if not cid:
+                continue
             doc = build_candidate_document(cand)
             documents.append(doc)
             ids.append(cid)
@@ -99,7 +101,7 @@ class SemanticRetriever:
         print("[SemanticRetriever] Encoding candidates (this may take a minute) …")
         self.candidate_embeddings = self.model.encode(
             documents,
-            batch_size=64,
+            batch_size=128,
             show_progress_bar=True,
             convert_to_numpy=True,
         )
