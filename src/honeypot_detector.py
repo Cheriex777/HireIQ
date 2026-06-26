@@ -258,7 +258,6 @@ def detect_honeypot(candidate: Dict[str, Any]) -> Dict[str, Any]:
 
 def detect_honeypots_batch(candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-<<<<<<< HEAD
     Run detect_honeypot over a list of candidates.
 
     Args:
@@ -285,62 +284,4 @@ def detect_honeypots_batch(candidates: List[Dict[str, Any]]) -> List[Dict[str, A
         "Honeypot detection complete: %d/%d candidates flagged suspicious.",
         suspicious_count, len(results),
     )
-=======
-    Detect suspicious candidates based on simple heuristic rules.
-
-    Returns:
-        [
-            {
-                "candidate_id": "...",
-                "is_suspicious": bool,
-                "reasons": [...]
-            }
-        ]
-    """
-
-    results = []
-
-    for idx, candidate in enumerate(candidates):
-
-        candidate_id = (
-            candidate.get("candidate_id")
-            or candidate.get("id")
-            or f"candidate_{idx}"
-        )
-
-        suspicious = False
-        reasons = []
-
-        profile = candidate.get("profile", {})
-        signals = candidate.get("redrob_signals", {})
-
-        exp = profile.get("years_of_experience", 0)
-
-        try:
-            exp = float(exp)
-        except:
-            exp = 0
-
-        github_score = float(signals.get("github_activity_score", 0) or 0)
-        recruiter_response = float(signals.get("recruiter_response_rate", 0) or 0)
-
-        # Rule 1
-        if exp > 25 and github_score == 0:
-            suspicious = True
-            reasons.append("Very high experience but no github activity")
-
-        # Rule 2
-        if recruiter_response < 0:
-            suspicious = True
-            reasons.append("Invalid recruiter response rate")
-
-        results.append(
-            {
-                "candidate_id": candidate_id,
-                "is_suspicious": suspicious,
-                "reasons": reasons,
-            }
-        )
-
->>>>>>> 6a3b577 (Add honeypot detection and evaluation pipeline)
     return results
