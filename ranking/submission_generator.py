@@ -13,7 +13,7 @@ import csv
 import config
 
 
-def validate_results(ranked_results, expected_n=100):
+def validate_results(ranked_results, expected_n=50):
     """Fail loudly before writing a broken file, not after submission."""
     errors = []
 
@@ -42,7 +42,7 @@ def validate_results(ranked_results, expected_n=100):
         raise ValueError("Submission validation failed:\n  - " + "\n  - ".join(errors))
 
 
-def write_submission(ranked_results, output_path=None, expected_n=100):
+def write_submission(ranked_results, output_path=None, expected_n=50):
     output_path = output_path or config.SUBMISSION_PATH
     validate_results(ranked_results, expected_n=expected_n)
 

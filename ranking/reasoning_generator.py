@@ -122,8 +122,8 @@ def _caveat_sentence(record, comp, required_years):
 
 def generate_reasoning(ranked_result, required_years=None):
     """ranked_result is one element from HybridRanker.rank()'s output list."""
-    required_years = required_years or config.DEFAULT_REQUIRED_YEARS
-    record = ranked_result["record"]
+    required_years = required_years or config.REQUIRED_YEARS
+    record = ranked_result["candidate"]
     comp = ranked_result["component_scores"]
 
     main = _main_sentence(record, ranked_result["matched_skills"])

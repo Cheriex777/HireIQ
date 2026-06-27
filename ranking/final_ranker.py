@@ -1,370 +1,403 @@
 """
-final_ranker.py
------------------
-The AI Ranking Engine. Given a Job Description, scores every candidate in
-the pre-built FAISS index across five dimensions, normalizes each to a
-comparable 0-1 scale (the old ranke_v1.py never did this -- its component
-scores had wildly different ranges and silently let years_of_experience
-dominate), combines them with configurable weights, and returns the top N.
+final_ranker.py — HireIQ AI Ranking Engine
+Member 1 deliverable.
 
-Usage:
-    from final_ranker import HybridRanker
-    ranker = HybridRanker()
-    results = ranker.rank(job_description_text, top_n=100)
-    # results: list of dicts, sorted by final_score desc, each containing
-    # candidate_id, final_score, component_scores, and the candidate record
-    # (the record is what reasoning_generator.py consumes)
+5 scoring dimensions:
+  1. Semantic similarity  — how well the candidate's profile matches the JD
+  2. Skill score          — JD skills matched by proficiency + assessment scores
+  3. Title score          — current/past title vs JD target titles
+  4. Experience score     — years vs JD requirement
+  5. Behavioral score     — full redrob_signals (response rate, github, etc.)
 """
 
 import json
+import os
 import re
+import sys
 
 import numpy as np
-import faiss
 from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# STEP 1 — Load candidates
+# ===========================================================================
 
-def _normalize_minmax(values):
-    """Min-max scale a list/array to 0-1. Computed at runtime over the
-    actual candidate pool rather than hardcoded assumed ranges, since we
-    don't know the true distribution of e.g. github_activity_score or
-    search_appearance_30d ahead of time -- this adapts automatically and
-    is robust to whatever scale the real data turns out to use."""
-    arr = np.asarray(values, dtype="float64")
-    lo, hi = arr.min(), arr.max()
-    if hi - lo < 1e-9:
-        return np.zeros_like(arr)
-    return (arr - lo) / (hi - lo)
+def load_candidates(path=None):
+    path = path or config.CANDIDATES_PATH
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    print(f"Loaded {len(data)} candidates from {path}")
+    return data
 
 
-def _title_overlap_score(candidate_title, important_titles):
-    """Token-overlap (Jaccard-style) match instead of exact string
-    membership. 'Senior AI Engineer II' should still score well against
-    'Senior AI Engineer' -- the old find_elite_candidates.py used exact
-    `title in elite_titles`, which misses any real-world title variant."""
-    if not candidate_title:
-        return 0.0
-    cand_tokens = set(re.findall(r"[a-z]+", candidate_title.lower()))
-    if not cand_tokens:
-        return 0.0
+# ===========================================================================
+# STEP 2 — Build text document for embedding
+# ===========================================================================
 
-    best = 0.0
-    for important in important_titles:
-        imp_tokens = set(re.findall(r"[a-z]+", important.lower()))
-        if not imp_tokens:
+def build_document(candidate):
+    profile = candidate.get("profile") or {}
+    skills  = candidate.get("skills") or []
+    career  = candidate.get("career_history") or []
+
+    title    = profile.get("current_title", "")
+    headline = profile.get("headline", "")
+    summary  = profile.get("summary", "")
+
+    skill_names = [s["name"] for s in skills if isinstance(s, dict) and s.get("name")]
+
+    job_texts = []
+    for job in career:
+        if isinstance(job, dict):
+            t = job.get("title", "")
+            d = job.get("description", "")
+            if t or d:
+                job_texts.append(f"{t}. {d}".strip())
+
+    parts = [
+        f"Title: {title}",
+        f"Headline: {headline}",
+        f"Summary: {summary}",
+        f"Skills: {', '.join(skill_names)}",
+    ] + job_texts
+
+    return "\n".join(p for p in parts if p.strip())
+
+
+# ===========================================================================
+# STEP 3 — Semantic scorer
+# ===========================================================================
+
+def semantic_score_all(jd_text, candidates):
+    print(f"Loading embedding model: {config.EMBEDDING_MODEL}")
+    model = SentenceTransformer(config.EMBEDDING_MODEL)
+
+    print("Embedding job description...")
+    jd_vec = model.encode([jd_text], batch_size=1, show_progress_bar=False)
+
+    print(f"Embedding {len(candidates)} candidate profiles...")
+    docs = [build_document(c) for c in candidates]
+    candidate_vecs = model.encode(
+        docs,
+        batch_size=config.EMBEDDING_BATCH,
+        show_progress_bar=True,
+    )
+
+    sims = cosine_similarity(jd_vec, candidate_vecs)[0]
+    return {
+        c["candidate_id"]: float(max(0.0, sims[i]))
+        for i, c in enumerate(candidates)
+    }
+
+
+# ===========================================================================
+# STEP 4 — Skill scorer
+# Uses: proficiency level + endorsements + duration + skill_assessment_scores
+# ===========================================================================
+
+def skill_score(candidate):
+    """
+    Three layers of evidence per skill:
+      Layer 1 — Proficiency (self-reported): advanced=1.0, intermediate=0.6, beginner=0.3
+      Layer 2 — Endorsements + duration (social/time proof)
+      Layer 3 — skill_assessment_scores (objective test score 0-100)
+
+    Layer 3 overrides layers 1+2 when available because it's objective,
+    not self-reported.
+    """
+    skills   = candidate.get("skills") or []
+    signals  = candidate.get("redrob_signals") or {}
+
+    # skill_assessment_scores: {"NLP": 38.8, "Fine-tuning LLMs": 41.6, ...}
+    # These are objective test scores out of 100
+    assessment_scores = signals.get("skill_assessment_scores") or {}
+    # Normalize assessment keys to lowercase for matching
+    assessments_lower = {k.lower(): v for k, v in assessment_scores.items()}
+
+    # Build candidate skill lookup: lowercase name -> full skill dict
+    candidate_skills = {}
+    for s in skills:
+        if not isinstance(s, dict):
             continue
-        overlap = len(cand_tokens & imp_tokens) / len(imp_tokens)
-        best = max(best, overlap)
-    return min(best, 1.0)
+        name = (s.get("name") or "").lower().strip()
+        if name:
+            candidate_skills[name] = s
 
+    total_score  = 0.0
+    max_possible = 0.0
+    matched      = []
 
-# ---------------------------------------------------------------------------
-# Component scorers
-# ---------------------------------------------------------------------------
+    all_jd_skills = (
+        [(s, 2.0) for s in config.MUST_HAVE_SKILLS] +
+        [(s, 1.0) for s in config.NICE_TO_HAVE_SKILLS]
+    )
 
-class SemanticScorer:
-    """Cosine similarity between JD and every candidate document, via the
-    pre-built FAISS index. O(n) query against the full corpus, which at
-    100k x 384-dim is a sub-second operation -- no need to shortlist."""
+    for jd_skill, weight in all_jd_skills:
+        max_possible += weight
 
-    def __init__(self, index_path=None, ids_path=None, model_name=None):
-        index_path = index_path or config.FAISS_INDEX_PATH
-        ids_path = ids_path or config.EMBEDDING_IDS_PATH
-        model_name = model_name or config.EMBEDDING_MODEL_NAME
+        # --- Find this JD skill in candidate's skill list ---
+        match = None
+        for cname, cskill in candidate_skills.items():
+            if jd_skill in cname or cname in jd_skill:
+                match = cskill
+                break
 
-        self.index = faiss.read_index(index_path)
-        with open(ids_path, "r", encoding="utf-8") as f:
-            self.candidate_ids = json.load(f)
-        self.model = SentenceTransformer(model_name)
+        if not match:
+            continue
 
-    def score(self, job_description: str):
-        """Returns dict candidate_id -> cosine similarity (0-1, since both
-        JD and candidate vectors are L2-normalized and FAISS IndexFlatIP
-        gives inner product == cosine similarity)."""
-        jd_vec = self.model.encode(
-            [job_description], convert_to_numpy=True, normalize_embeddings=True
-        ).astype("float32")
+        skill_display_name = match.get("name", jd_skill)
 
-        k = self.index.ntotal
-        scores, indices = self.index.search(jd_vec, k)
-        scores, indices = scores[0], indices[0]
+        # --- Layer 1: proficiency ---
+        proficiency = (match.get("proficiency") or "beginner").lower()
+        prof_weight = config.PROFICIENCY_WEIGHTS.get(proficiency, 0.3)
 
-        # cosine similarity is in [-1, 1]; clip negatives to 0 since a
-        # negative match is meaningless for ranking purposes here
-        result = {}
-        for score, idx in zip(scores, indices):
-            if idx == -1:
-                continue
-            result[self.candidate_ids[idx]] = max(0.0, float(score))
-        return result
+        # --- Layer 2: endorsements + duration bonus ---
+        endorsements  = min(match.get("endorsements", 0) or 0, 50)
+        endorse_bonus = (endorsements / 50) * 0.15
 
+        duration      = min(match.get("duration_months", 0) or 0, 36)
+        duration_bonus = (duration / 36) * 0.10
 
-class SkillScorer:
-    """Weighted skill coverage: must-have skills count more than nice-to-have.
-    Matches on canonicalized skill names (handles synonyms like 'LLM' vs
-    'Large Language Model'), with a small bonus for skills mentioned in the
-    candidate's headline/summary/career text even if absent from their
-    formal skills list (catches incomplete skill-list data)."""
+        combined = min(prof_weight + endorse_bonus + duration_bonus, 1.0)
 
-    def __init__(self, must_have=None, nice_to_have=None):
-        self.must_have = [config.canonicalize_skill(s) for s in
-                           (must_have or config.MUST_HAVE_SKILLS)]
-        self.nice_to_have = [config.canonicalize_skill(s) for s in
-                              (nice_to_have or config.NICE_TO_HAVE_SKILLS)]
-        self.must_weight = 2.0
-        self.nice_weight = 1.0
-        self.max_possible = (len(self.must_have) * self.must_weight +
-                              len(self.nice_to_have) * self.nice_weight)
+        # --- Layer 3: objective assessment score (overrides if available) ---
+        # Check if there's a test score for this skill
+        assessment_val = None
+        for akey, aval in assessments_lower.items():
+            if jd_skill in akey or akey in jd_skill:
+                assessment_val = aval
+                break
 
-    def score(self, record, full_text=""):
-        candidate_skills = set(record.get("canonical_skills", []))
-        total = 0.0
-        matched = []
-
-        for s in self.must_have:
-            if s in candidate_skills:
-                total += self.must_weight
-                matched.append(s)
-            elif s in full_text.lower():
-                total += self.must_weight * 0.4  # partial credit, text-only mention
-                matched.append(s + " (mentioned)")
-
-        for s in self.nice_to_have:
-            if s in candidate_skills:
-                total += self.nice_weight
-                matched.append(s)
-            elif s in full_text.lower():
-                total += self.nice_weight * 0.4
-                matched.append(s + " (mentioned)")
-
-        score = total / self.max_possible if self.max_possible else 0.0
-        return min(score, 1.0), matched
-
-
-class TitleScorer:
-    """Current title weighted heavily; past titles in career_history give
-    partial credit (a strong career trajectory toward this role matters)."""
-
-    def __init__(self, important_titles=None):
-        self.important_titles = important_titles or config.IMPORTANT_TITLES
-        self.current_weight = 0.7
-        self.history_weight = 0.3
-
-    def score(self, record):
-        current = _title_overlap_score(record.get("current_title", ""), self.important_titles)
-
-        past_titles = record.get("past_titles", [])
-        if past_titles:
-            history_scores = [_title_overlap_score(t, self.important_titles) for t in past_titles]
-            history = max(history_scores)
+        if assessment_val is not None:
+            # Assessment score 0-100. Weight it 60% assessment, 40% profile signals
+            assessment_normalized = assessment_val / 100.0
+            combined = 0.60 * assessment_normalized + 0.40 * combined
+            matched.append(f"{skill_display_name} ({proficiency}, assessed: {assessment_val:.0f}/100)")
         else:
-            history = 0.0
+            matched.append(f"{skill_display_name} ({proficiency})")
 
-        return self.current_weight * current + self.history_weight * history
+        total_score += weight * combined
 
-
-class ExperienceScorer:
-    """Years of experience vs the JD's stated requirement. Meeting the bar
-    matters more than exceeding it -- score plateaus instead of growing
-    unbounded like the old code (which added raw years directly, letting a
-    25-year generalist outscore a 5-year specialist purely on tenure)."""
-
-    def __init__(self, required_years=None):
-        self.required_years = required_years or config.DEFAULT_REQUIRED_YEARS
-
-    def score(self, record):
-        years = record.get("years_of_experience", 0) or 0
-        req = self.required_years
-        if req <= 0:
-            return 1.0
-
-        if years >= req:
-            bonus = min((years - req) / req, 1.0)
-            return min(1.0, 0.7 + 0.3 * bonus)
-        return max(0.0, (years / req)) * 0.7
+    score = total_score / max_possible if max_possible > 0 else 0.0
+    return min(score, 1.0), matched
 
 
-class BehavioralScorer:
-    """Normalizes redrob_signals across the actual candidate pool at
-    runtime (percentile/min-max), rather than assuming a fixed scale for
-    fields whose true range (e.g. github_activity_score) isn't confirmed.
-    Must be fit once over the full pool, then applied per-candidate."""
+# ===========================================================================
+# STEP 5 — Title scorer
+# ===========================================================================
 
-    RATE_FIELDS = [
-        "recruiter_response_rate", "interview_completion_rate",
-        "offer_acceptance_rate", "profile_completeness_score",
-    ]
-    COUNT_FIELDS = ["github_activity_score", "saved_by_recruiters_30d", "search_appearance_30d"]
-    FLAG_FIELDS = ["open_to_work_flag", "verified_email", "verified_phone"]
-
-    def __init__(self):
-        self._fitted = False
-        self._count_ranges = {}
-
-    def fit(self, records):
-        for field in self.COUNT_FIELDS:
-            values = [r.get("redrob_signals", {}).get(field, 0) or 0 for r in records]
-            arr = np.asarray(values, dtype="float64")
-            self._count_ranges[field] = (arr.min(), arr.max())
-        self._fitted = True
-
-    def _normalize_count(self, field, value):
-        lo, hi = self._count_ranges.get(field, (0, 1))
-        if hi - lo < 1e-9:
+def title_score(candidate):
+    def overlap(title_a, title_b):
+        if not title_a or not title_b:
             return 0.0
-        return float(np.clip((value - lo) / (hi - lo), 0.0, 1.0))
+        tokens_a = set(re.findall(r"[a-z]+", title_a.lower()))
+        tokens_b = set(re.findall(r"[a-z]+", title_b.lower()))
+        if not tokens_b:
+            return 0.0
+        return len(tokens_a & tokens_b) / len(tokens_b)
 
-    def score(self, record):
-        if not self._fitted:
-            raise RuntimeError("BehavioralScorer.fit(all_records) must be called once before scoring")
+    profile       = candidate.get("profile") or {}
+    current_title = profile.get("current_title", "") or ""
+    career        = candidate.get("career_history") or []
+    past_titles   = [j.get("title", "") for j in career if isinstance(j, dict)]
 
-        signals = record.get("redrob_signals", {})
+    best_current = max(
+        (overlap(current_title, t) for t in config.IMPORTANT_TITLES),
+        default=0.0
+    )
+    best_past = max(
+        (overlap(pt, t) for pt in past_titles for t in config.IMPORTANT_TITLES),
+        default=0.0
+    ) if past_titles else 0.0
 
-        rate_score = np.mean([
-            float(signals.get(f, 0) or 0) for f in self.RATE_FIELDS
-        ])
-
-        count_score = np.mean([
-            self._normalize_count(f, signals.get(f, 0) or 0) for f in self.COUNT_FIELDS
-        ])
-
-        flag_score = np.mean([
-            1.0 if signals.get(f) else 0.0 for f in self.FLAG_FIELDS
-        ])
-
-        # rates carry the most signal (they're already meaningful 0-1
-        # behavioral metrics), counts and flags are supporting evidence
-        return 0.5 * rate_score + 0.3 * count_score + 0.2 * flag_score
+    return min(0.7 * best_current + 0.3 * best_past, 1.0)
 
 
-# ---------------------------------------------------------------------------
-# Hybrid ranker
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# STEP 6 — Experience scorer
+# ===========================================================================
 
-class HybridRanker:
-    def __init__(self, corpus_path=None, weights=None, required_years=None,
-                 must_have_skills=None, nice_to_have_skills=None, important_titles=None):
-        self.corpus_path = corpus_path or config.CORPUS_CACHE_PATH
-        self.weights = weights or config.WEIGHTS
-        assert abs(sum(self.weights.values()) - 1.0) < 1e-6, "WEIGHTS must sum to 1.0"
+def experience_score(candidate):
+    profile = candidate.get("profile") or {}
+    years   = float(profile.get("years_of_experience", 0) or 0)
+    req     = config.REQUIRED_YEARS
 
-        print("Loading candidate corpus...")
-        self.corpus = self._load_corpus(self.corpus_path)
+    if years >= req:
+        bonus = min((years - req) / req, 1.0)
+        return min(0.7 + 0.3 * bonus, 1.0)
+    return max(0.0, (years / req) * 0.7)
 
-        print("Loading semantic search index...")
-        self.semantic_scorer = SemanticScorer()
 
-        self.skill_scorer = SkillScorer(must_have_skills, nice_to_have_skills)
-        self.title_scorer = TitleScorer(important_titles)
-        self.experience_scorer = ExperienceScorer(required_years)
+# ===========================================================================
+# STEP 7 — Behavioral scorer
+# Uses the FULL real redrob_signals schema
+# ===========================================================================
 
-        self.behavioral_scorer = BehavioralScorer()
-        self.behavioral_scorer.fit([row["record"] for row in self.corpus.values()])
+def _pool_max(candidates, key):
+    """Get max value of a signal across the whole pool (for normalization)."""
+    vals = []
+    for c in candidates:
+        v = (c.get("redrob_signals") or {}).get(key)
+        if v is not None and v != -1:
+            try:
+                vals.append(float(v))
+            except (TypeError, ValueError):
+                pass
+    return max(vals) if vals else 1.0
 
-    @staticmethod
-    def _load_corpus(path):
-        corpus = {}
-        with open(path, "r", encoding="utf-8") as f:
-            for line in f:
-                row = json.loads(line)
-                corpus[row["candidate_id"]] = row
-        return corpus
 
-    def rank(self, job_description: str, top_n=None, shortlist_k=None):
-        """
-        Stage 1: semantic similarity over the full corpus, take top
-                 `shortlist_k` candidates (default from config.SHORTLIST_K).
-        Stage 2-3: skill / title / experience / behavioral scoring + hybrid
-                 combination, run only on the shortlist.
+def behavioral_score(candidate, all_candidates, pool_maxes=None):
+    """
+    Scores based on the full redrob_signals schema.
+    pool_maxes is pre-computed once for efficiency.
+    """
+    signals = candidate.get("redrob_signals") or {}
 
-        Tradeoff, stated plainly: this cutoff exists in the spec as a
-        retrieve-then-rerank pattern, but since stages 2-3 here are cheap
-        (no API calls, no heavy compute per candidate), it buys you no real
-        speed -- only a recall risk, since a candidate with a perfect skill
-        match but a generic document-text summary could be excluded before
-        Stage 2 ever sees them. Set shortlist_k >= corpus size (e.g. to
-        config-defined corpus length) to disable the cutoff and score every
-        candidate on every component instead.
-        """
-        top_n = top_n or config.TOP_N
-        shortlist_k = shortlist_k if shortlist_k is not None else config.SHORTLIST_K
+    def get(key, default=0.0):
+        v = signals.get(key, default)
+        if v is None or v == -1:
+            return default
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return default
 
-        if shortlist_k < top_n:
-            raise ValueError(
-                f"shortlist_k ({shortlist_k}) must be >= top_n ({top_n}) -- "
-                f"can't return {top_n} results from a shortlist of {shortlist_k}."
-            )
+    def norm(key):
+        """Normalize a count field against pool max."""
+        val = get(key)
+        mx  = pool_maxes.get(key, 1.0) if pool_maxes else _pool_max(all_candidates, key)
+        return val / mx if mx > 0 else 0.0
 
-        print("Stage 1: scoring semantic similarity for all candidates...")
-        semantic_scores = self.semantic_scorer.score(job_description)
+    # --- Rate signals (already 0-1) ---
+    recruiter_response  = get("recruiter_response_rate")       # 0.34
+    interview_complete  = get("interview_completion_rate")     # 0.71
+    offer_acceptance    = max(0.0, get("offer_acceptance_rate"))  # 0.58
 
-        shortlist_k = min(shortlist_k, len(self.corpus))
-        shortlisted_ids = sorted(
-            semantic_scores, key=semantic_scores.get, reverse=True
-        )[:shortlist_k]
-        print(f"Stage 1 shortlist: {len(shortlisted_ids)} of {len(self.corpus)} candidates "
-              f"carried forward to Stage 2 (semantic score range "
-              f"{semantic_scores[shortlisted_ids[-1]]:.3f} - {semantic_scores[shortlisted_ids[0]]:.3f}).")
+    # --- Profile quality ---
+    completeness = get("profile_completeness_score") / 100.0   # 86.9 -> 0.869
 
-        print("Stage 2/3: scoring skills / title / experience / behavior, then combining...")
-        results = []
-        for candidate_id in shortlisted_ids:
-            row = self.corpus[candidate_id]
-            record = row["record"]
-            text = row["text"]
+    # --- Activity signals (normalize against pool) ---
+    github_norm   = norm("github_activity_score")              # 9.2
+    search_norm   = norm("search_appearance_30d")              # 249
+    saved_norm    = norm("saved_by_recruiters_30d")            # 4
+    views_norm    = norm("profile_views_received_30d")         # 23
+    connections   = min(get("connection_count") / 500.0, 1.0) # 356 -> 0.71
 
-            sem = semantic_scores[candidate_id]
-            skill, matched_skills = self.skill_scorer.score(record, full_text=text)
-            title = self.title_scorer.score(record)
-            experience = self.experience_scorer.score(record)
-            behavioral = self.behavioral_scorer.score(record)
+    # --- Responsiveness (lower hours = better, invert) ---
+    avg_hours = get("avg_response_time_hours", 999)
+    responsiveness = max(0.0, 1.0 - (avg_hours / 240.0))      # 240hrs = 0, 0hrs = 1
 
-            final_score = (
-                self.weights["semantic"] * sem +
-                self.weights["skill"] * skill +
-                self.weights["title"] * title +
-                self.weights["experience"] * experience +
-                self.weights["behavioral"] * behavioral
-            )
+    # --- Boolean signals ---
+    open_to_work = 1.0 if signals.get("open_to_work_flag") else 0.0
+    verified     = 1.0 if (signals.get("verified_email") and signals.get("verified_phone")) else 0.0
+    linkedin     = 1.0 if signals.get("linkedin_connected") else 0.5
 
-            results.append({
-                "candidate_id": candidate_id,
-                "final_score": round(final_score * 100, 2),  # 0-100 scale for readability
-                "component_scores": {
-                    "semantic": round(sem, 4),
-                    "skill": round(skill, 4),
-                    "title": round(title, 4),
-                    "experience": round(experience, 4),
-                    "behavioral": round(behavioral, 4),
-                },
-                "matched_skills": matched_skills,
-                "record": record,
-            })
+    # --- Combine ---
+    # Weights reflect what actually predicts a candidate will engage:
+    # response rates + interview completion are the strongest signals
+    score = (
+        0.20 * recruiter_response  +
+        0.15 * interview_complete  +
+        0.10 * offer_acceptance    +
+        0.10 * completeness        +
+        0.10 * github_norm         +
+        0.08 * search_norm         +
+        0.08 * saved_norm          +
+        0.05 * views_norm          +
+        0.05 * connections         +
+        0.04 * responsiveness      +
+        0.03 * open_to_work        +
+        0.01 * verified            +
+        0.01 * linkedin
+    )
+    return min(score, 1.0)
 
-        results.sort(key=lambda r: r["final_score"], reverse=True)
 
-        for rank, r in enumerate(results[:top_n], start=1):
-            r["rank"] = rank
+# ===========================================================================
+# STEP 8 — Hybrid ranking
+# ===========================================================================
 
-        return results[:top_n]
+def rank_candidates(jd_text, candidates, top_n=None):
+    top_n = top_n or config.TOP_N
+    w     = config.WEIGHTS
 
+    # Stage 1: semantic similarity
+    semantic_scores = semantic_score_all(jd_text, candidates)
+
+    # Shortlist top K by semantic score
+    shortlist_k = min(config.SHORTLIST_K, len(candidates))
+    shortlisted = sorted(
+        candidates,
+        key=lambda c: semantic_scores.get(c["candidate_id"], 0),
+        reverse=True
+    )[:shortlist_k]
+
+    print(f"Stage 1 shortlist: {len(shortlisted)} candidates")
+    print("Stage 2/3: scoring skills, title, experience, behavior...")
+
+    # Pre-compute pool maxes once (not inside the loop)
+    count_fields = [
+        "github_activity_score", "search_appearance_30d",
+        "saved_by_recruiters_30d", "profile_views_received_30d",
+        "connection_count",
+    ]
+    pool_maxes = {f: _pool_max(candidates, f) for f in count_fields}
+
+    results = []
+    for c in shortlisted:
+        cid = c["candidate_id"]
+
+        sem            = semantic_scores.get(cid, 0.0)
+        sk, matched    = skill_score(c)
+        ti             = title_score(c)
+        ex             = experience_score(c)
+        beh            = behavioral_score(c, candidates, pool_maxes=pool_maxes)
+
+        final = (
+            w["semantic"]   * sem +
+            w["skill"]      * sk  +
+            w["title"]      * ti  +
+            w["experience"] * ex  +
+            w["behavioral"] * beh
+        )
+
+        results.append({
+            "candidate_id":    cid,
+            "final_score":     round(final * 100, 2),
+            "component_scores": {
+                "semantic":    round(sem, 4),
+                "skill":       round(sk,  4),
+                "title":       round(ti,  4),
+                "experience":  round(ex,  4),
+                "behavioral":  round(beh, 4),
+            },
+            "matched_skills": matched,
+            "candidate":      c,
+        })
+
+    results.sort(key=lambda r: r["final_score"], reverse=True)
+    for rank, r in enumerate(results[:top_n], start=1):
+        r["rank"] = rank
+
+    return results[:top_n]
+
+
+# ===========================================================================
+# Quick test — run this file directly
+# ===========================================================================
 
 if __name__ == "__main__":
-    # quick smoke test against a hardcoded JD; real usage goes through
-    # run_pipeline.py with a JD file
-    sample_jd = """
-    Senior AI Engineer - Search & Recommendation
-    Must have: NLP, RAG, Embeddings, Vector Search, FAISS, Milvus,
-    Information Retrieval, Recommendation Systems, Semantic Search,
-    Ranking Systems, Fine-tuning LLMs. 5+ years experience.
-    """
-    ranker = HybridRanker()
-    top = ranker.rank(sample_jd, top_n=20)
-    for r in top:
-        print(r["rank"], r["final_score"], r["candidate_id"], r["component_scores"])
+    candidates = load_candidates()
+    jd_text    = open(config.JD_PATH, encoding="utf-8").read()
+    top        = rank_candidates(jd_text, candidates, top_n=config.TOP_N)
+
+    print(f"\n{'Rank':<5} {'Score':<8} {'ID':<15} {'Title'}")
+    print("-" * 65)
+    for r in top[:10]:
+        profile = r["candidate"]["profile"]
+        title   = profile.get("current_title", "Unknown")[:30]
+        print(f"{r['rank']:<5} {r['final_score']:<8} {r['candidate_id']:<15} {title}")
