@@ -3,7 +3,10 @@ reasoning_generator.py
 HireIQ - Explainability Engine
 
 Generates a concise, human-readable one-line reasoning for why each
-candidate was ranked where they were.
+candidate was ranked where they were. Includes an honest caveat clause
+when a candidate is genuinely weak on a specific signal, instead of
+only ever praising -- a recruiter reading 100 of these should be able
+to spot the borderline candidates, not see uniform positivity.
 """
 
 from __future__ import annotations
@@ -21,6 +24,11 @@ SKILL_HIGH = 70.0
 BEHAVIOR_HIGH = 70.0
 TITLE_HIGH = 80.0
 EXPERIENCE_HIGH = 80.0
+
+# Thresholds below which a signal is weak enough to mention as a caveat
+SEMANTIC_LOW = 40.0
+SKILL_LOW = 35.0
+EXPERIENCE_LOW_YEARS = 5  # JD's stated minimum
 
 MAX_REASON_CLAUSES = 4
 
@@ -98,10 +106,47 @@ def _semantic_clause(semantic_score: float) -> Optional[str]:
     return None
 
 
+def _caveat_clause(
+    candidate: Dict[str, Any],
+    semantic_score: float,
+    skill_score: float,
+) -> Optional[str]:
+    """
+    Honest gap-flagging -- only stated when actually true, not a
+    boilerplate disclaimer on every row. Mirrors a single weak signal
+    so a recruiter scanning the list can spot borderline candidates.
+    """
+    try:
+        years = candidate.get("profile", {}).get("years_of_experience")
+        notes = []
+
+        if years is not None:
+            years = float(years)
+            if years < EXPERIENCE_LOW_YEARS:
+                notes.append(f"experience ({int(years)} years) is below the {EXPERIENCE_LOW_YEARS}+ year requirement")
+
+        if semantic_score < SEMANTIC_LOW:
+            notes.append("overall semantic alignment with the job description is comparatively weak")
+
+        if skill_score < SKILL_LOW:
+            notes.append("formal skill-list coverage of the JD's required skills is thin")
+
+        if not notes:
+            return None
+
+        # Only ever surface the single most relevant gap -- avoid piling on
+        return f"worth noting: {notes[0]}"
+
+    except Exception as exc:
+        logger.warning("Caveat clause generation failed: %s", exc)
+        return None
+
+
 def generate_reasoning(
     candidate: Dict[str, Any],
     features: Dict[str, Any],
     jd_skills: List[str],
+    include_caveats: bool = True,
 ) -> str:
     """
     Build a one-line, human-readable explanation for a candidate's rank.
@@ -110,6 +155,9 @@ def generate_reasoning(
         candidate: raw candidate record (profile, skills, etc.)
         features: feature dict from feature_extractor (scores).
         jd_skills: skills parsed from the job description.
+        include_caveats: if True, appends an honest gap-flag sentence
+                          when a candidate is genuinely weak on a signal.
+                          Set False to restore the original praise-only behavior.
 
     Returns:
         Single-line reasoning string. Falls back to a generic message on error.
@@ -134,12 +182,18 @@ def generate_reasoning(
         clauses = [c for c in clause_builders if c]
 
         if not clauses:
-            return "Moderate overall fit based on combined profile signals."
+            main = "Moderate overall fit based on combined profile signals."
+        else:
+            clauses = clauses[:MAX_REASON_CLAUSES]
+            main = ", ".join(clauses)
+            main = main[0].upper() + main[1:] + "."
 
-        clauses = clauses[:MAX_REASON_CLAUSES]
-        reasoning = ", ".join(clauses)
-        reasoning = reasoning[0].upper() + reasoning[1:] + "."
-        return reasoning
+        if include_caveats:
+            caveat = _caveat_clause(candidate, semantic_score, skill_score)
+            if caveat:
+                return f"{main} {caveat[0].upper()}{caveat[1:]}."
+
+        return main
 
     except Exception as exc:
         logger.error("generate_reasoning failed for candidate %s: %s", candidate_id, exc)
@@ -150,6 +204,7 @@ def generate_reasoning_batch(
     candidates: List[Dict[str, Any]],
     ranked_features: List[Dict[str, Any]],
     jd_skills: List[str],
+    include_caveats: bool = True,
 ) -> Dict[str, str]:
     """
     Generate reasoning strings for a batch of ranked candidates.
@@ -158,6 +213,7 @@ def generate_reasoning_batch(
         candidates: list of raw candidate records.
         ranked_features: list of feature/score dicts (from final_ranker output).
         jd_skills: skills parsed from job description.
+        include_caveats: passed through to generate_reasoning() for every candidate.
 
     Returns:
         dict mapping candidate_id -> reasoning string.
@@ -172,7 +228,9 @@ def generate_reasoning_batch(
         cid = features.get("candidate_id", "UNKNOWN")
         candidate = candidate_lookup.get(cid, {"candidate_id": cid})
         try:
-            reasoning_map[cid] = generate_reasoning(candidate, features, jd_skills)
+            reasoning_map[cid] = generate_reasoning(
+                candidate, features, jd_skills, include_caveats=include_caveats
+            )
         except Exception as exc:
             logger.error("Failed to generate reasoning for %s: %s", cid, exc)
             reasoning_map[cid] = "Ranked based on combined profile signals."

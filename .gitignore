@@ -1,34 +1,71 @@
+# =====================================================
 # Python
+# =====================================================
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
 .Python
 *.egg-info/
-dist/
 build/
+dist/
+pip-wheel-metadata/
 
-# Virtual environments
+# =====================================================
+# Virtual Environments
+# =====================================================
 venv/
 .venv/
 env/
+ENV/
 
-# Embeddings cache (large binary files)
+# =====================================================
+# IDE / Editor
+# =====================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =====================================================
+# OS Files
+# =====================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =====================================================
+# Environment Variables
+# =====================================================
+.env
+.env.*
+
+# =====================================================
+# Large Generated Files (Do NOT Commit)
+# =====================================================
 output/candidate_embeddings.npy
 output/candidate_ids.json
 output/candidate_documents.json
 
-# Dataset (too large for git)
+# =====================================================
+# Official Hackathon Dataset (Not Public)
+# =====================================================
 data/candidates.jsonl
 data/candidates.jsonl.gz
 
-# OS
-.DS_Store
-Thumbs.db
+# =====================================================
+# Logs
+# =====================================================
+logs/
+*.log
 
-# IDE
-.vscode/
-.idea/
+# =====================================================
+# Jupyter Notebook Checkpoints
+# =====================================================
+.ipynb_checkpoints/
 
-# Env files
-.env
+# =====================================================
+# Cache
+# =====================================================
+.pytest_cache/
+.mypy_cache/
+.cache/

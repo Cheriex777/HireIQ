@@ -3,7 +3,9 @@ submission_generator.py
 HireIQ - Submission Generator
 
 Builds the final submission.csv from ranked candidates and their
-generated reasoning strings.
+generated reasoning strings. Validates the result BEFORE writing,
+so a broken pipeline fails loudly instead of silently shipping a
+corrupted CSV.
 """
 
 from __future__ import annotations
@@ -33,6 +35,49 @@ def _validate_row(row: Dict[str, Any]) -> bool:
         )
         return False
     return True
+
+
+def validate_submission_rows(rows: List[Dict[str, Any]], expected_n: Optional[int] = None) -> None:
+    """
+    Fail loudly BEFORE writing a broken file, not after submission.
+
+    Checks:
+      - row count matches expected_n (if given)
+      - no duplicate candidate_ids
+      - ranks form a clean 1..N sequence
+      - scores are sorted descending (rank/score consistency)
+      - no empty reasoning text
+
+    Raises:
+        ValueError: with a combined list of every issue found.
+    """
+    errors: List[str] = []
+
+    if expected_n is not None and len(rows) != expected_n:
+        errors.append(f"Expected {expected_n} rows, got {len(rows)}")
+
+    ids = [r["candidate_id"] for r in rows]
+    if len(ids) != len(set(ids)):
+        dupes = {i for i in ids if ids.count(i) > 1}
+        errors.append(f"Duplicate candidate_ids found: {dupes}")
+
+    ranks = [r["rank"] for r in rows]
+    if ranks != list(range(1, len(rows) + 1)):
+        errors.append("Ranks are not a clean 1..N sequence")
+
+    scores = [r["score"] for r in rows]
+    if scores != sorted(scores, reverse=True):
+        errors.append("Scores are not sorted descending -- rank/score mismatch")
+
+    for r in rows:
+        if not str(r.get("reasoning", "")).strip():
+            errors.append(f"Empty reasoning found for candidate {r.get('candidate_id', 'UNKNOWN')}")
+            break  # one example is enough, don't flood the error list
+
+    if errors:
+        raise ValueError("Submission validation failed:\n  - " + "\n  - ".join(errors))
+
+    logger.info("Submission validation passed: %d rows, all checks OK.", len(rows))
 
 
 def build_submission_rows(
@@ -76,20 +121,31 @@ def build_submission_rows(
 def write_submission_csv(
     rows: List[Dict[str, Any]],
     output_path: str = DEFAULT_OUTPUT_PATH,
+    expected_n: Optional[int] = None,
+    skip_validation: bool = False,
 ) -> str:
     """
-    Write submission rows to a CSV file.
+    Validate (unless skipped), then write submission rows to a CSV file.
 
     Args:
         rows: list of dicts with keys candidate_id, rank, score, reasoning.
         output_path: destination path for submission.csv.
+        expected_n: if given, validation fails if row count doesn't match
+                     (e.g. pass 100 to enforce exactly top-100).
+        skip_validation: set True only for quick debug runs on small samples
+                          where a mismatched row count is expected.
 
     Returns:
         The output_path written to.
 
     Raises:
+        ValueError: if validation fails (row count, duplicates, rank/score
+                     order, or empty reasoning).
         IOError: if the file cannot be written.
     """
+    if not skip_validation:
+        validate_submission_rows(rows, expected_n=expected_n)
+
     try:
         out_dir = os.path.dirname(output_path)
         if out_dir:
@@ -113,14 +169,19 @@ def generate_submission(
     ranked_candidates: List[Dict[str, Any]],
     reasoning_map: Dict[str, str],
     output_path: str = DEFAULT_OUTPUT_PATH,
+    expected_n: Optional[int] = None,
 ) -> str:
     """
-    End-to-end: build rows from ranked candidates + reasoning, write to CSV.
+    End-to-end: build rows from ranked candidates + reasoning, validate,
+    write to CSV.
 
     Args:
         ranked_candidates: output from final_ranker.rank().
         reasoning_map: output from reasoning_generator.generate_reasoning_batch().
         output_path: path to write submission.csv.
+        expected_n: pass e.g. 100 to enforce exactly that many rows; leave
+                     None to skip the row-count check (still validates
+                     duplicates, rank order, score order, empty reasoning).
 
     Returns:
         Path to the written CSV file.
@@ -128,4 +189,6 @@ def generate_submission(
     rows = build_submission_rows(ranked_candidates, reasoning_map)
     if not rows:
         logger.warning("No valid rows to write; submission.csv will be empty (header only).")
-    return write_submission_csv(rows, output_path=output_path)
+        return write_submission_csv(rows, output_path=output_path, skip_validation=True)
+
+    return write_submission_csv(rows, output_path=output_path, expected_n=expected_n)

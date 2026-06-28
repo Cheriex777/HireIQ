@@ -69,7 +69,6 @@ run.py
   └── Step 6   Write output/submission.csv (submission_generator.py)
 ```
 
----
 
 ## Repository Structure
 
