@@ -7,20 +7,21 @@
 team_name: "HireIQ"
 
 primary_contact:
-  name: "Ishika Vilasrao Mohod"
-  email: "mohodishika2022@gmail.com"
-  phone: "+91-9028638572"
+  name: "Dakshyani Ashok Borade"
+  email: "dakshyaniborade@gmail.com"
+  role: "Team Leader / AI & ML"
 
 team_members:
+  - name: "Dakshyani Ashok Borade"
+    email: "dakshyaniborade@gmail.com"
+    role: "Team Leader / AI & ML"
   - name: "Ishika Vilasrao Mohod"
     email: "mohodishika2022@gmail.com"
+    phone: "+91-9028638572"
     role: "Data Science"
   - name: "Ashwini Umakant Koturwar"
     email: "koturwarashwini1@gmail.com"
     role: "MERN Stack Developer"
-  - name: "Dakshyani Ashok Borade"
-    email: "dakshyaniborade@gmail.com"
-    role: "AI/ML"
 
 # ============================================================================
 # Code and reproducibility
@@ -31,53 +32,78 @@ sandbox_link: "https://colab.research.google.com/drive/1veFIu33Nxd3j3Mw4zUuQqkKs
 
 reproduce_command: "python run.py"
 
+dashboard_command: "streamlit run app.py"
+
 # ============================================================================
 # Compute environment
 # ============================================================================
 compute:
   platform: "Windows PC"
+  os: "Windows 11"
+  python_version: "3.12.4"
   cpu_cores: 4
   ram_gb: 16
-  python_version: "3.12.4"
-  os: "Windows 11"
   uses_gpu_for_inference: false
   has_network_during_ranking: false
   pre_computation_required: true
-  pre_computation_time_minutes: 12
+  pre_computation_time_minutes: 120   # first run — embedding generation for 100K candidates
+  subsequent_run_time_seconds: "25–30"
 
 # ============================================================================
 # AI tools declaration
 # ============================================================================
 ai_tools_used:
-  - "Claude"
+  - "Claude (Anthropic)"
 
 ai_usage_summary: |
   Used Claude (Anthropic) for code review, debugging, and architectural
   discussion during development of the data science pipeline. Claude assisted
   with module signature verification, field name corrections against the
-  candidate schema, and pipeline orchestration in run.py. No candidate data
-  was fed to any LLM. All ranking logic, scoring weights, and feature
-  engineering decisions were made by the team.
+  candidate schema, and pipeline orchestration review. No candidate data was
+  shared with any LLM. All scoring weights, feature engineering decisions,
+  and ranking logic were made by the team.
 
 # ============================================================================
 # Approach summary
 # ============================================================================
 methodology_summary: |
-  HireIQ is a five-signal hybrid ranking system built for the Redrob Senior
-  AI Engineer JD. Pipeline: (1) Semantic retrieval using sentence-transformers
-  (all-MiniLM-L6-v2) with cosine similarity to retrieve top-500 candidates
-  from 100K pool. (2) Feature extraction across five dimensions — semantic
-  score (40%), skill overlap with JD keywords including synonym normalization
-  and partial credit (25%), experience score tuned to JD sweet spot of 5-9
-  years (15%), behavioral engagement signals from redrob_signals including
-  recruiter response rate, GitHub activity, interview completion, and
-  open-to-work flag (10%), title relevance with fuzzy keyword matching against
-  20+ engineering title variants (10%). (3) Hybrid weighted ranking to produce
-  top-100 with final scores. (4) Rule-based reasoning generator producing
-  one-line human-readable explanations per candidate. Designed to penalize
-  keyword stuffers (title score), ghost candidates (behavior score), and
-  consulting-background candidates via semantic context understanding.
-  Runtime: ~12 min first run (embedding cache), ~2 min subsequent runs.
+  HireIQ is a six-signal hybrid ranking system built for the Redrob Senior
+  AI Engineer JD.
+
+  Signals and weights:
+    - Semantic similarity      35%  (all-MiniLM-L6-v2 cosine similarity)
+    - Skill overlap            27%  (JD keyword match + synonym normalization)
+    - Experience               15%  (tuned to 5–9 year sweet spot)
+    - Behavioral engagement    10%  (recruiter response, GitHub, interviews)
+    - Title relevance           8%  (fuzzy match, 20+ engineering title variants)
+    - Profile completeness      5%  (rewards fully-filled profiles)
+
+  Scoring formula:
+    final_score = base_score × (1 − honeypot_penalty)
+
+  Honeypot / fraud detection scans every candidate for: unrealistic experience,
+  excessive skill-padding, senior-title-with-zero-activity mismatches, and
+  abnormal behavioral signals. Flagged profiles receive a multiplicative penalty
+  rather than outright rejection to avoid false positives.
+
+  Pipeline:
+    run.py → semantic retrieval (top-500) → feature extraction →
+    honeypot detection → hybrid ranking (top-100) → reasoning generation →
+    submission.csv
+
+  Runtime: ~2 hours first run (embedding cache), ~25–30 seconds subsequently.
+
+# ============================================================================
+# Results
+# ============================================================================
+results:
+  total_candidates_evaluated: 100000
+  final_submission_size: 100
+  top_score: 75.91
+  avg_score: 66.11
+  median_score: 64.94
+  std_dev: 3.66
+  suspicious_profiles_flagged: 0
 
 # ============================================================================
 # Declarations
@@ -86,5 +112,6 @@ declarations:
   read_submission_spec: true
   code_is_original_work: true
   no_collusion: true
-  honeypot_check_done: false
+  honeypot_check_done: true
   reproduction_tested: true
+  dashboard_included: true
