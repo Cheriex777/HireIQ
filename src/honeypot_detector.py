@@ -12,24 +12,27 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+from src.config import (
+    MAX_REALISTIC_EXPERIENCE_YEARS,
+    MAX_REALISTIC_SKILLS,
+    SENIOR_TITLE_KEYWORDS,
+    SUSPICIOUS_SCORE_THRESHOLD,
+)
+
 logger = logging.getLogger("hireiq.honeypot_detector")
 logging.basicConfig(level=logging.INFO)
 
 
-# ----------------------------------------------------------------------
-# Thresholds / config
-# ----------------------------------------------------------------------
-
-MAX_REALISTIC_SKILLS = 25          # beyond this, skill-padding suspected
-MAX_REALISTIC_EXPERIENCE_YEARS = 30
-MIN_AGE_FOR_EXPERIENCE = 18        # used if DOB/age available; else skip
-SUSPICIOUS_SCORE_THRESHOLD = 0.5   # is_suspicious flag cutoff
-
-# Titles implying high seniority that should correlate with some activity
-SENIOR_TITLE_KEYWORDS = ["senior", "staff", "lead", "principal", "head", "director"]
-
-
 def _safe_float(value: Any, default: float = 0.0) -> float:
+    """Coerce a value to float, falling back to a default on failure.
+
+    Args:
+        value: Value to convert (may be None, str, int, float, etc.).
+        default: Value returned if conversion fails or value is None.
+
+    Returns:
+        The converted float, or ``default``.
+    """
     try:
         if value is None:
             return default
@@ -51,7 +54,7 @@ def _check_unrealistic_experience(years_of_experience: Any) -> float:
         if years > MAX_REALISTIC_EXPERIENCE_YEARS:
             return 0.8
         return 0.0
-    except Exception as exc:
+    except (TypeError, ValueError) as exc:
         logger.warning("Experience check failed: %s", exc)
         return 0.0
 
@@ -65,7 +68,7 @@ def _check_excessive_skills(skills: List[Any]) -> float:
             overflow = count - MAX_REALISTIC_SKILLS
             return min(0.3 + 0.05 * overflow, 1.0)
         return 0.0
-    except Exception as exc:
+    except TypeError as exc:
         logger.warning("Skill count check failed: %s", exc)
         return 0.0
 
@@ -93,7 +96,7 @@ def _check_incomplete_profile(profile: Dict[str, Any],
         elif critical_missing == 1:
             return 0.2
         return 0.0
-    except Exception as exc:
+    except AttributeError as exc:
         logger.warning("Profile completeness check failed: %s", exc)
         return 0.0
 
@@ -118,7 +121,7 @@ def _check_title_activity_mismatch(profile: Dict[str, Any],
         if github_activity < 2 and connections < 10 and endorsements < 3:
             return 0.7
         return 0.0
-    except Exception as exc:
+    except AttributeError as exc:
         logger.warning("Title/activity mismatch check failed: %s", exc)
         return 0.0
 
@@ -147,7 +150,7 @@ def _check_abnormal_behavior(redrob_signals: Dict[str, Any]) -> float:
             suspicion = max(suspicion, 0.4)
 
         return suspicion
-    except Exception as exc:
+    except AttributeError as exc:
         logger.warning("Behavior anomaly check failed: %s", exc)
         return 0.0
 
@@ -184,7 +187,7 @@ def _check_inconsistent_career_history(career_history: List[Any],
                 return 0.5
 
         return 0.0
-    except Exception as exc:
+    except (TypeError, ValueError) as exc:
         logger.warning("Career history consistency check failed: %s", exc)
         return 0.0
 

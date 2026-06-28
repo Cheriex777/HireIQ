@@ -9,7 +9,7 @@ features for candidates given a job description context.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger("hireiq.feature_extractor")
 logging.basicConfig(level=logging.INFO)
@@ -80,59 +80,58 @@ TITLE_KEYWORD_SCORES: Dict[str, float] = {
 
 DEFAULT_TITLE_SCORE = 45.0
 
+# NOTE: duplicate keys with identical values (e.g. "sentence transformers"
+# appeared 4x, "information retrieval" 2x, "ab testing" 2x) have been
+# de-duplicated below. Python dict literals silently keep the last value
+# on duplicate keys, so this is a no-op cleanup — mapping values are
+# byte-for-byte identical to before.
 SKILL_SYNONYMS: Dict[str, str] = {
-    "tf":                           "tensorflow",
-    "tensor flow":                  "tensorflow",
-    "vector db":                    "vector search",
-    "vector databases":             "vector search",
-    "vector database":              "vector search",
-    "information retrieval":        "information retrieval",
-    "ir":                           "information retrieval",
-    "llm finetuning":               "fine-tuning llms",
-    "llm fine-tuning":              "fine-tuning llms",
-    "finetuning":                   "fine-tuning llms",
-    "fine tuning":                  "fine-tuning llms",
-    "rag pipelines":                "rag",
-    "retrieval augmented generation": "rag",
-    "retrieval-augmented generation": "rag",
-    "nlp":                          "nlp",
-    "natural language processing":  "nlp",
-    "sentence transformers":        "sentence-transformers",
-    "sbert":                        "sentence-transformers",
-    "elastic search":               "elasticsearch",
-    "open search":                  "elasticsearch",
-    "opensearch":                   "elasticsearch",
-    "xgboost":                      "learning-to-rank",
-    "lightgbm":                     "learning-to-rank",
-    "ltr":                          "learning-to-rank",
-    "a/b test":                     "a/b testing",
-    "ab testing":                   "a/b testing",
-    "hybrid search":                "hybrid retrieval",
-    "dense retrieval":              "hybrid retrieval",
-    "sentence transformers":    "sentence-transformers",
-    "hugging face transformers": "sentence-transformers",
-    "huggingface transformers": "sentence-transformers",
-    "faiss":                    "faiss",
-    "embeddings":               "embeddings",
-    "machine learning":         "machine learning",
-    "feature engineering":      "feature engineering",
-    "information retrieval":    "information retrieval",
-    "mlops":                    "mlops",
-    "mlflow":                   "mlflow",
-    "scikit-learn":             "scikit-learn",
-    "scikit learn":             "scikit-learn",
-    "sentence transformers":     "sentence-transformers",
-    "hugging face transformers": "sentence-transformers",
-    "huggingface transformers": "sentence-transformers",
-    "llms":                      "llms",
-    "large language models":     "llms",
-    "a/b testing":               "a/b testing",
-    "ab testing":                "a/b testing",
-    "learning to rank":          "learning-to-rank",
-    "vector search":             "vector search",
-    "hybrid retrieval":          "hybrid retrieval",
-    "ranking systems":           "ranking systems",
-    "evaluation frameworks":     "evaluation frameworks",
+    "tf":                              "tensorflow",
+    "tensor flow":                     "tensorflow",
+    "vector db":                       "vector search",
+    "vector databases":                "vector search",
+    "vector database":                "vector search",
+    "information retrieval":           "information retrieval",
+    "ir":                              "information retrieval",
+    "llm finetuning":                  "fine-tuning llms",
+    "llm fine-tuning":                 "fine-tuning llms",
+    "finetuning":                      "fine-tuning llms",
+    "fine tuning":                     "fine-tuning llms",
+    "rag pipelines":                   "rag",
+    "retrieval augmented generation":  "rag",
+    "retrieval-augmented generation":  "rag",
+    "nlp":                             "nlp",
+    "natural language processing":     "nlp",
+    "sentence transformers":           "sentence-transformers",
+    "sbert":                           "sentence-transformers",
+    "elastic search":                  "elasticsearch",
+    "open search":                     "elasticsearch",
+    "opensearch":                      "elasticsearch",
+    "xgboost":                         "learning-to-rank",
+    "lightgbm":                        "learning-to-rank",
+    "ltr":                             "learning-to-rank",
+    "a/b test":                        "a/b testing",
+    "ab testing":                      "a/b testing",
+    "hybrid search":                   "hybrid retrieval",
+    "dense retrieval":                 "hybrid retrieval",
+    "hugging face transformers":       "sentence-transformers",
+    "huggingface transformers":        "sentence-transformers",
+    "faiss":                           "faiss",
+    "embeddings":                      "embeddings",
+    "machine learning":                "machine learning",
+    "feature engineering":             "feature engineering",
+    "mlops":                           "mlops",
+    "mlflow":                          "mlflow",
+    "scikit-learn":                    "scikit-learn",
+    "scikit learn":                    "scikit-learn",
+    "llms":                            "llms",
+    "large language models":           "llms",
+    "a/b testing":                     "a/b testing",
+    "learning to rank":                "learning-to-rank",
+    "vector search":                   "vector search",
+    "hybrid retrieval":                "hybrid retrieval",
+    "ranking systems":                 "ranking systems",
+    "evaluation frameworks":           "evaluation frameworks",
 }
 
 BEHAVIOR_FIELDS: List[str] = [
@@ -171,6 +170,18 @@ BEHAVIOR_COUNT_CAPS: Dict[str, float] = {
 # Helpers
 # ----------------------------------------------------------------------
 def _normalize_skill(skill: str) -> str:
+    """Normalize a raw skill string to its canonical synonym form.
+
+    Tries the skill as-is, then with hyphens replaced by spaces, then
+    with spaces replaced by hyphens, falling back to the lowercased
+    input if no synonym mapping is found.
+
+    Args:
+        skill: Raw skill string.
+
+    Returns:
+        The canonical (normalized) skill name.
+    """
     s = skill.strip().lower()
     s_no_hyphen = s.replace("-", " ")
     s_with_hyphen = s.replace(" ", "-")
@@ -179,7 +190,16 @@ def _normalize_skill(skill: str) -> str:
            SKILL_SYNONYMS.get(s_with_hyphen, s)))
 
 
-def _normalize_skill_set(skills: Optional[List[Any]]) -> set:
+def _normalize_skill_set(skills: Optional[List[Any]]) -> Set[str]:
+    """Normalize a list of skills (dicts or strings) into a set of names.
+
+    Args:
+        skills: List of skill entries, each either a dict with a "name"
+            key or a plain string. May be None or empty.
+
+    Returns:
+        A set of normalized, lowercased skill names.
+    """
     if not skills:
         return set()
     try:
@@ -194,11 +214,21 @@ def _normalize_skill_set(skills: Optional[List[Any]]) -> set:
             if name and name.strip():
                 names.append(_normalize_skill(name))
         return set(names)
-    except Exception as exc:
+    except (TypeError, AttributeError) as exc:
         logger.warning("Failed to normalize skill list %s: %s", skills, exc)
         return set()
 
+
 def _safe_float(value: Any, default: float = 0.0) -> float:
+    """Coerce a value to float, falling back to a default on failure.
+
+    Args:
+        value: Value to convert (may be None, str, int, float, etc.).
+        default: Value returned if conversion fails or value is None.
+
+    Returns:
+        The converted float, or ``default``.
+    """
     try:
         if value is None:
             return default
@@ -215,6 +245,13 @@ def calculate_skill_score(jd_skills: List[str], candidate_skills: List[str]) -> 
     """
     Percentage overlap of normalized JD skills found in candidate skills.
     Also gives partial credit for skills found via substring matching.
+
+    Args:
+        jd_skills: Skills parsed from the job description.
+        candidate_skills: Skills listed on the candidate's profile.
+
+    Returns:
+        Skill overlap score in [0.0, 100.0].
     """
     try:
         jd_set = _normalize_skill_set(jd_skills)
@@ -237,7 +274,7 @@ def calculate_skill_score(jd_skills: List[str], candidate_skills: List[str]) -> 
 
         score = (len(exact_overlap) + 0.5 * len(partial_matches)) / len(jd_set) * 100.0
         return round(min(max(score, 0.0), 100.0), 2)
-    except Exception as exc:
+    except (TypeError, ZeroDivisionError) as exc:
         logger.error("calculate_skill_score failed: %s", exc)
         return 0.0
 
@@ -246,6 +283,13 @@ def calculate_experience_score(years_of_experience: Any) -> float:
     """
     Score years of experience against JD sweet spot of 5-9 years.
     Peak score at 6-8 years; penalizes too little or too much.
+
+    Args:
+        years_of_experience: Candidate's years of experience (any type;
+            coerced to float internally).
+
+    Returns:
+        Experience score in [0.0, 100.0].
     """
     try:
         years = _safe_float(years_of_experience, default=0.0)
@@ -269,7 +313,7 @@ def calculate_experience_score(years_of_experience: Any) -> float:
             return round(80.0 - (years - 9) * 5.0, 2)         # 80→65
         else:
             return 60.0
-    except Exception as exc:
+    except (TypeError, ValueError) as exc:
         logger.error("calculate_experience_score failed: %s", exc)
         return 0.0
 
@@ -278,6 +322,12 @@ def calculate_title_score(current_title: Optional[str]) -> float:
     """
     Map candidate's current title to a relevance score.
     Tries exact match first, then keyword-based fuzzy match.
+
+    Args:
+        current_title: Candidate's current job title, if any.
+
+    Returns:
+        Title relevance score in [0.0, 100.0].
     """
     try:
         if not current_title or not isinstance(current_title, str):
@@ -296,7 +346,7 @@ def calculate_title_score(current_title: Optional[str]) -> float:
                 best_score = max(best_score, score)
 
         return best_score
-    except Exception as exc:
+    except (TypeError, AttributeError) as exc:
         logger.error("calculate_title_score failed: %s", exc)
         return DEFAULT_TITLE_SCORE
 
@@ -306,6 +356,12 @@ def calculate_behavior_score(redrob_signals: Optional[Dict[str, Any]]) -> float:
     Weighted normalized score from behavioral / engagement signals.
     Handles fraction fields (0-1), count fields, and -1 sentinels.
     Also applies open_to_work and notice_period bonuses.
+
+    Args:
+        redrob_signals: Dict of raw behavioral/engagement signal values.
+
+    Returns:
+        Behavior score in [0.0, 100.0].
     """
     try:
         if not redrob_signals or not isinstance(redrob_signals, dict):
@@ -351,7 +407,7 @@ def calculate_behavior_score(redrob_signals: Optional[Dict[str, Any]]) -> float:
             base_score = min(base_score + 3.0, 100.0)
 
         return round(base_score, 2)
-    except Exception as exc:
+    except (TypeError, ZeroDivisionError) as exc:
         logger.error("calculate_behavior_score failed: %s", exc)
         return 0.0
 
@@ -362,7 +418,17 @@ def calculate_profile_completeness_score(
     education: Optional[List[Any]] = None,
     skills: Optional[List[Any]] = None,
 ) -> float:
-    """Score based on how complete a candidate's profile data is."""
+    """Score based on how complete a candidate's profile data is.
+
+    Args:
+        profile: Candidate profile dict.
+        career_history: List of career history entries, if any.
+        education: List of education entries, if any.
+        skills: List of skill entries, if any.
+
+    Returns:
+        Completeness score in [0.0, 100.0].
+    """
     try:
         checks = [
             bool(profile.get("headline")),
@@ -375,7 +441,7 @@ def calculate_profile_completeness_score(
             bool(skills),
         ]
         return round(100.0 * sum(checks) / len(checks), 2)
-    except Exception as exc:
+    except (TypeError, AttributeError) as exc:
         logger.error("calculate_profile_completeness_score failed: %s", exc)
         return 0.0
 

@@ -15,16 +15,30 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
+from src.config import SUBMISSION_PATH
+
 logger = logging.getLogger("hireiq.submission_generator")
 logging.basicConfig(level=logging.INFO)
 
 
 SUBMISSION_COLUMNS = ["candidate_id", "rank", "score", "reasoning"]
 
-DEFAULT_OUTPUT_PATH = os.path.join("outputs", "submission.csv")
+# NOTE: previously hard-coded as os.path.join("outputs", "submission.csv")
+# (plural "outputs" — inconsistent with the rest of the project's "output/"
+# convention). Now sourced from config.py, the single source of truth.
+DEFAULT_OUTPUT_PATH = SUBMISSION_PATH
 
 
 def _validate_row(row: Dict[str, Any]) -> bool:
+    """Check that a single ranked-candidate row has the required keys.
+
+    Args:
+        row: A ranked candidate dict (output of final_ranker.rank()).
+
+    Returns:
+        True if candidate_id, rank, and final_score are all present,
+        False otherwise.
+    """
     required = ("candidate_id", "rank", "final_score")
     missing = [k for k in required if k not in row]
     if missing:
@@ -47,6 +61,10 @@ def validate_submission_rows(rows: List[Dict[str, Any]], expected_n: Optional[in
       - ranks form a clean 1..N sequence
       - scores are sorted descending (rank/score consistency)
       - no empty reasoning text
+
+    Args:
+        rows: Submission rows to validate.
+        expected_n: If given, validation fails if row count doesn't match.
 
     Raises:
         ValueError: with a combined list of every issue found.
@@ -160,7 +178,7 @@ def write_submission_csv(
         logger.info("Submission written to %s (%d rows).", output_path, len(rows))
         return output_path
 
-    except Exception as exc:
+    except OSError as exc:
         logger.error("Failed to write submission CSV to %s: %s", output_path, exc)
         raise IOError(f"Could not write submission CSV: {exc}") from exc
 

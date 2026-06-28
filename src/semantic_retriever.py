@@ -1,6 +1,3 @@
-#Step 1: embeddings + cosine search
-
-
 """
 semantic_retriever.py - Generates candidate embeddings and retrieves
 top-N candidates semantically closest to a job description.
@@ -13,21 +10,28 @@ Usage:
     results = retriever.retrieve(job_description, top_k=500)
 """
 
-import os
-import json
-import numpy as np
-from typing import List, Dict, Tuple
+from __future__ import annotations
 
+import json
+import logging
+import os
+from typing import Dict, List, Optional
+
+import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
-from src.utils import load_jsonl, build_candidate_document, save_json
+from src.config import (
+    CANDIDATE_DOCS_PATH,
+    EMBEDDINGS_CACHE_PATH,
+    IDS_CACHE_PATH,
+    OUTPUT_DIR,
+    SEMANTIC_MODEL_NAME,
+)
+from src.utils import build_candidate_document, load_jsonl, save_json
 
-
-MODEL_NAME = "all-MiniLM-L6-v2"
-CANDIDATE_DOCS_PATH = "output/candidate_documents.json"
-EMBEDDINGS_CACHE_PATH = "output/candidate_embeddings.npy"
-IDS_CACHE_PATH = "output/candidate_ids.json"
+logger = logging.getLogger("hireiq.semantic_retriever")
+logging.basicConfig(level=logging.INFO)
 
 
 class SemanticRetriever:
@@ -36,11 +40,17 @@ class SemanticRetriever:
     cosine-similarity-based retrieval against a job description.
     """
 
-    def __init__(self, model_name: str = MODEL_NAME):
-        print(f"[SemanticRetriever] Loading model: {model_name}")
+    def __init__(self, model_name: str = SEMANTIC_MODEL_NAME) -> None:
+        """Load the SentenceTransformer model and initialize empty state.
+
+        Args:
+            model_name: Name of the SentenceTransformer model to load.
+                Defaults to ``config.SEMANTIC_MODEL_NAME``.
+        """
+        logger.info("Loading model: %s", model_name)
         self.model = SentenceTransformer(model_name)
         self.candidate_ids: List[str] = []
-        self.candidate_embeddings: np.ndarray = None
+        self.candidate_embeddings: Optional[np.ndarray] = None
         self.candidates_raw: List[Dict] = []
 
     # ------------------------------------------------------------------
@@ -55,26 +65,32 @@ class SemanticRetriever:
         """
         Load candidates from .jsonl, build text documents, encode them.
         Caches embeddings to disk so re-runs are fast.
+
+        Args:
+            jsonl_path: Path to the candidates .jsonl file.
+            force_recompute: If True, ignore any existing cache and
+                re-encode all candidates from scratch.
         """
         if (
             not force_recompute
             and os.path.exists(EMBEDDINGS_CACHE_PATH)
             and os.path.exists(IDS_CACHE_PATH)
         ):
-            print("[SemanticRetriever] Loading cached embeddings …")
+            logger.info("Loading cached embeddings...")
             self.candidate_embeddings = np.load(EMBEDDINGS_CACHE_PATH)
             with open(IDS_CACHE_PATH, "r") as f:
                 self.candidate_ids = json.load(f)
             self.candidates_raw = load_jsonl(jsonl_path)
-            print(
-                f"[SemanticRetriever] Loaded {len(self.candidate_ids)} candidates "
-                f"with embeddings shape {self.candidate_embeddings.shape}"
+            logger.info(
+                "Loaded %d candidates with embeddings shape %s",
+                len(self.candidate_ids),
+                self.candidate_embeddings.shape,
             )
             return
 
-        print(f"[SemanticRetriever] Reading candidates from {jsonl_path} …")
+        logger.info("Reading candidates from %s...", jsonl_path)
         self.candidates_raw = load_jsonl(jsonl_path)
-        print(f"[SemanticRetriever] {len(self.candidates_raw)} candidates loaded.")
+        logger.info("%d candidates loaded.", len(self.candidates_raw))
 
         # Build text documents
         documents = []
@@ -93,25 +109,25 @@ class SemanticRetriever:
         self.candidate_ids = ids
 
         # Persist documents for inspection
-        os.makedirs("output", exist_ok=True)
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
         save_json(saved_docs, CANDIDATE_DOCS_PATH)
-        print(f"[SemanticRetriever] Saved candidate documents → {CANDIDATE_DOCS_PATH}")
+        logger.info("Saved candidate documents -> %s", CANDIDATE_DOCS_PATH)
 
         # Encode
-        print("[SemanticRetriever] Encoding candidates (this may take a minute) …")
+        logger.info("Encoding candidates (this may take a minute)...")
         self.candidate_embeddings = self.model.encode(
             documents,
             batch_size=128,
             show_progress_bar=True,
             convert_to_numpy=True,
         )
-        print(f"[SemanticRetriever] Embeddings shape: {self.candidate_embeddings.shape}")
+        logger.info("Embeddings shape: %s", self.candidate_embeddings.shape)
 
         # Cache to disk
         np.save(EMBEDDINGS_CACHE_PATH, self.candidate_embeddings)
         with open(IDS_CACHE_PATH, "w") as f:
             json.dump(self.candidate_ids, f)
-        print("[SemanticRetriever] Embeddings cached to disk.")
+        logger.info("Embeddings cached to disk.")
 
     # ------------------------------------------------------------------
     # Retrieval
@@ -126,14 +142,21 @@ class SemanticRetriever:
         Encode the job description, compute cosine similarities,
         and return top_k candidates sorted by semantic score.
 
-        Returns list of dicts:
-            {candidate_id, semantic_score, candidate_data}
+        Args:
+            job_description: Raw job description text.
+            top_k: Number of top candidates to return.
+
+        Returns:
+            List of dicts: {candidate_id, semantic_score, candidate_data}.
+
+        Raises:
+            AssertionError: if called before load_and_encode_candidates().
         """
         assert self.candidate_embeddings is not None, (
             "Call load_and_encode_candidates() first."
         )
 
-        print(f"[SemanticRetriever] Encoding job description …")
+        logger.info("Encoding job description...")
         jd_embedding = self.model.encode(
             [job_description], convert_to_numpy=True
         )  # shape (1, 384)
@@ -158,8 +181,9 @@ class SemanticRetriever:
                 }
             )
 
-        print(
-            f"[SemanticRetriever] Top-{top_k} candidates retrieved. "
-            f"Highest semantic score: {results[0]['semantic_score']:.2f}"
+        logger.info(
+            "Top-%d candidates retrieved. Highest semantic score: %.2f",
+            top_k,
+            results[0]["semantic_score"],
         )
         return results
