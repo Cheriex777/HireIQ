@@ -1,0 +1,130 @@
+{
+  "total_candidates_in_dataset": 100000,
+  "top_titles": [
+    [
+      "Business Analyst",
+      5833
+    ],
+    [
+      "HR Manager",
+      5830
+    ],
+    [
+      "Mechanical Engineer",
+      5791
+    ],
+    [
+      "Accountant",
+      5764
+    ],
+    [
+      "Project Manager",
+      5754
+    ],
+    [
+      "Customer Support",
+      5750
+    ],
+    [
+      "Operations Manager",
+      5744
+    ],
+    [
+      "Content Writer",
+      5727
+    ],
+    [
+      "Sales Executive",
+      5713
+    ],
+    [
+      "Civil Engineer",
+      5702
+    ]
+  ],
+  "top_skills": [
+    [
+      "HTML",
+      12246
+    ],
+    [
+      "Databricks",
+      12244
+    ],
+    [
+      "Redux",
+      12222
+    ],
+    [
+      "Terraform",
+      12187
+    ],
+    [
+      "Angular",
+      12173
+    ],
+    [
+      "Figma",
+      12157
+    ],
+    [
+      "Salesforce CRM",
+      12157
+    ],
+    [
+      "Vue.js",
+      12142
+    ],
+    [
+      "Sales",
+      12138
+    ],
+    [
+      "Accounting",
+      12136
+    ],
+    [
+      "Agile",
+      12135
+    ],
+    [
+      "Kafka",
+      12114
+    ],
+    [
+      "Excel",
+      12109
+    ],
+    [
+      "BigQuery",
+      12108
+    ],
+    [
+      "CI/CD",
+      12108
+    ]
+  ],
+  "average_experience_years": 7.17,
+  "average_behavior_signals": {
+    "recruiter_response_rate": 0.4366,
+    "github_activity_score": 29.0292,
+    "search_appearance_30d": 117.5438,
+    "saved_by_recruiters_30d": 7.6587,
+    "interview_completion_rate": 0.6195,
+    "offer_acceptance_rate": 0.4745
+  },
+  "honeypot_summary": {
+    "total_candidates": 100000,
+    "suspicious_count": 0,
+    "suspicious_percentage": 0.0,
+    "suspicious_ids": []
+  },
+  "final_top_100_distribution": {
+    "count": 100,
+    "min_score": 59.69,
+    "max_score": 74.61,
+    "mean_score": 64.1,
+    "std_score": 3.97,
+    "median_score": 62.73
+  }
+}
